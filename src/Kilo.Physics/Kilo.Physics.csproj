@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>Kilo.Physics</RootNamespace>
+    <AssemblyName>Kilo.Physics</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Kilo.ECS\Kilo.ECS.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="BepuPhysics" Version="2.5.0-beta.28" />
+    <PackageReference Include="BepuUtilities" Version="2.5.0-beta.28" />
+  </ItemGroup>
+</Project>

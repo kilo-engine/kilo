@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Kilo.Rendering\Kilo.Rendering.csproj" />
+    <ProjectReference Include="..\..\src\Kilo.ECS\Kilo.ECS.csproj" />
+    <ProjectReference Include="..\..\src\Kilo.Input\Kilo.Input.csproj" />
+  </ItemGroup>
+</Project>

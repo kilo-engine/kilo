@@ -1,0 +1,72 @@
+<#@ template debug="false" hostspecific="false" language="C#" #>
+<#@ assembly name="System.Core" #>
+<#@ import namespace="System.Linq" #>
+<#@ import namespace="System.Text" #>
+<#@ import namespace="System.Collections.Generic" #>
+<#@ output extension=".g.cs" #>
+<#
+    const int MAX_PARAMS = 15;
+
+    string GenericParams(int count) => string.Join(", ", Enumerable.Range(1, count).Select(i => $"T{i}"));
+    string WhereConstraints(int count) => string.Join(" ", Enumerable.Range(1, count).Select(i => $"where T{i} : ISystemParam, new()"));
+    string ParamDecls(int count) => string.Join("\n\t\t", Enumerable.Range(1, count).Select(i => $"var p{i} = new T{i}();"));
+    string FetchCalls(int count) => string.Join("\n\t\t\t", Enumerable.Range(1, count).Select(i => $"p{i}.Fetch(w);"));
+    string CallbackParams(int count) => string.Join(", ", Enumerable.Range(1, count).Select(i => $"p{i}"));
+#>
+#pragma warning disable 1591
+#nullable enable
+
+using System;
+
+namespace TinyEcs.Bevy;
+
+public static partial class EntityCommandsObserverExtensions
+{
+<#
+    for (var i = 1; i <= MAX_PARAMS; ++i)
+    {
+        var generics = GenericParams(i);
+        var whereClause = WhereConstraints(i);
+        var paramDecls = ParamDecls(i);
+        var fetchCalls = FetchCalls(i);
+        var callbackParams = CallbackParams(i);
+#>
+	/// <summary>
+	/// Register an entity-specific observer with system parameters.
+	/// The observer reacts to triggers on this specific entity only.
+	/// Commands parameters are automatically applied after the observer executes.
+	/// </summary>
+	public static EntityCommands Observe<TTrigger, <#= generics #>>(this EntityCommands entity, Action<TTrigger, <#= generics #>> callback)
+		where TTrigger : struct, ITrigger
+		<#= whereClause #>
+	{
+		// Use ObserveWithWorld to get World access, then fetch system parameters
+		<#= paramDecls #>
+		return entity.ObserveWithWorld<TTrigger>((w, trigger) =>
+		{
+			<#= fetchCalls #>
+			callback(trigger, <#= callbackParams #>);
+
+			// Auto-apply Commands if any parameter is Commands type
+			// Collect all Commands instances and apply them in one pass
+			Commands? cmd = null;
+<#
+		for (var j = 1; j <= i; j++)
+		{
+#>
+			if (p<#= j #> is Commands c<#= j #>) cmd = c<#= j #>;
+<#
+		}
+#>
+			if (cmd != null)
+			{
+				cmd.Apply();
+				w.FlushObservers();
+			}
+		});
+	}
+
+<#
+    }
+#>
+}

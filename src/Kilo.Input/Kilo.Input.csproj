@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>Kilo.Input</RootNamespace>
+    <AssemblyName>Kilo.Input</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Kilo.ECS\Kilo.ECS.csproj" />
+  </ItemGroup>
+</Project>

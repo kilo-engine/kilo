@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Library</OutputType>
+    <RootNamespace>Kilo.ECS</RootNamespace>
+    <AssemblyName>Kilo.ECS</AssemblyName>
+    <EmitCompilerGeneratedFiles>true</EmitCompilerGeneratedFiles>
+    <CompilerGeneratedFilesOutputPath>$(BaseIntermediateOutputPath)\Generated</CompilerGeneratedFilesOutputPath>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\3rd-party\TinyEcs\TinyEcs\TinyEcs.csproj" />
+    <ProjectReference Include="..\..\3rd-party\TinyEcs\TinyEcs.Bevy\TinyEcs.Bevy.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Kilo.ECS.Tests" />
+  </ItemGroup>
+
+</Project>

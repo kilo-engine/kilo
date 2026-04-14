@@ -1,0 +1,26 @@
+<Solution>
+  <Folder Name="/3rd-party/">
+    <Project Path="3rd-party/TinyEcs/TinyEcs/TinyEcs.csproj" />
+    <Project Path="3rd-party/TinyEcs/TinyEcs.Bevy/TinyEcs.Bevy.csproj" />
+  </Folder>
+  <Folder Name="/samples/">
+    <Project Path="samples/Kilo.Samples.HelloECS/Kilo.Samples.HelloECS.csproj" />
+    <Project Path="samples/Kilo.Samples.RenderDemo/Kilo.Samples.RenderDemo.csproj" />
+    <Project Path="samples/Kilo.Samples.Physics/Kilo.Samples.Physics.csproj" />
+    <Project Path="samples/Kilo.Samples.Assets/Kilo.Samples.Assets.csproj" />
+  </Folder>
+  <Folder Name="/src/">
+    <Project Path="src/Kilo.ECS/Kilo.ECS.csproj" />
+    <Project Path="src/Kilo.Rendering/Kilo.Rendering.csproj" />
+    <Project Path="src/Kilo.Physics/Kilo.Physics.csproj" />
+    <Project Path="src/Kilo.Input/Kilo.Input.csproj" />
+    <Project Path="src/Kilo.Assets/Kilo.Assets.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Kilo.ECS.Tests/Kilo.ECS.Tests.csproj" />
+    <Project Path="tests/Kilo.Rendering.Tests/Kilo.Rendering.Tests.csproj" />
+    <Project Path="tests/Kilo.Physics.Tests/Kilo.Physics.Tests.csproj" />
+    <Project Path="tests/Kilo.Input.Tests/Kilo.Input.Tests.csproj" />
+    <Project Path="tests/Kilo.Assets.Tests/Kilo.Assets.Tests.csproj" />
+  </Folder>
+</Solution>
