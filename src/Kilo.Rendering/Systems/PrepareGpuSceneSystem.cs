@@ -39,16 +39,11 @@ public sealed class PrepareGpuSceneSystem
                     cameraData.View = cameras[i].ViewMatrix;
                     cameraData.Projection = cameras[i].ProjectionMatrix;
                     cameraData.Position = transforms[i].Position;
-                    cameraData.LightCount = 0; // will be set after light collection
                     cameraFound = true;
                     if (cameras[i].IsActive) break;
                 }
             }
         }
-
-        var cameraArray = new CameraData[1];
-        cameraArray[0] = cameraData;
-        scene.CameraBuffer.UploadData<CameraData>(cameraArray.AsSpan());
 
         // --- Draw objects (skip culled entities) ---
         var meshQuery = world.QueryBuilder()
@@ -152,9 +147,9 @@ public sealed class PrepareGpuSceneSystem
 
         scene.LightCount = lights.Count;
         cameraData.LightCount = lights.Count;
-        var cameraArray2 = new CameraData[1];
-        cameraArray2[0] = cameraData;
-        scene.CameraBuffer.UploadData<CameraData>(cameraArray2.AsSpan());
+        var cameraArray = new CameraData[1];
+        cameraArray[0] = cameraData;
+        scene.CameraBuffer.UploadData<CameraData>(cameraArray.AsSpan());
         if (frame <= 3)
             Console.WriteLine($"[PrepareGpuScene] Frame {frame}: Lights={lights.Count}, CamPos={cameraData.Position}, CamZ={cameraData.View.M31:F2},{cameraData.View.M32:F2},{cameraData.View.M33:F2}");
 

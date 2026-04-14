@@ -12,6 +12,8 @@ public sealed class FrustumCullingSystem
 {
     public void Update(KiloWorld world)
     {
+        var context = world.GetResource<RenderContext>();
+
         // Build frustum from the active camera
         var cameraQuery = world.QueryBuilder()
             .With<Camera>()
@@ -61,8 +63,9 @@ public sealed class FrustumCullingSystem
                     continue;
                 }
 
-                // Transform local AABB to world space
-                var worldAABB = TransformAABB(BoundsLocal.UnitCube, transforms[i].Value);
+                // Transform local AABB to world space using actual mesh bounds
+                var mesh = context.Meshes[renderers[i].MeshHandle];
+                var worldAABB = TransformAABB(mesh.Bounds, transforms[i].Value);
                 bool visible = frustum.IntersectsAABB(worldAABB.Min, worldAABB.Max);
 
                 if (visible)
@@ -73,7 +76,7 @@ public sealed class FrustumCullingSystem
         }
     }
 
-    private static (Vector3 Min, Vector3 Max) TransformAABB(BoundsLocal local, Matrix4x4 world)
+    private static (Vector3 Min, Vector3 Max) TransformAABB((Vector3 Min, Vector3 Max) local, Matrix4x4 world)
     {
         var min = local.Min;
         var max = local.Max;

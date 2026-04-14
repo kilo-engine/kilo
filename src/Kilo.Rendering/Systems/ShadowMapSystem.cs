@@ -57,12 +57,8 @@ public sealed class ShadowMapSystem
             -shadowRange, shadowRange, -shadowRange, shadowRange, 0.1f, 50f);
 
         // WebGPU uses clip-space Z [0,1], but CreateOrthographic uses [-1,1].
-        // Apply remap matrix: scale Z by 0.5 and offset by 0.5
-        var remap = new Matrix4x4(
-            1, 0, 0, 0,
-            0, 1, 0, 0,
-            0, 0, 0.5f, 0,
-            0, 0, 0.5f, 1);
+        // Apply remap: scale Z by 0.5 and translate by 0.5 to map [-1,1] → [0,1]
+        var remap = Matrix4x4.CreateScale(1, 1, 0.5f) * Matrix4x4.CreateTranslation(0, 0, 0.5f);
         var lightVP = lightView * lightProj * remap;
 
         scene.ShadowLightVP = lightVP;

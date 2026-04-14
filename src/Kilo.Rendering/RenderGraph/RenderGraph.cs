@@ -153,32 +153,38 @@ public sealed class RenderGraph : IDisposable
 
         using var encoder = driver.BeginCommandEncoding();
 
-        foreach (var pass in _passes)
+        try
         {
-            if (pass.IsCompute)
+            foreach (var pass in _passes)
             {
-                encoder.BeginComputePass();
-            }
-            else
-            {
-                BeginRenderPassForPass(driver, encoder, pass);
+                if (pass.IsCompute)
+                {
+                    encoder.BeginComputePass();
+                }
+                else
+                {
+                    BeginRenderPassForPass(driver, encoder, pass);
+                }
+
+                var ctx = new RenderPassExecutionContext(this, driver, encoder);
+                pass.RunExecute(ctx);
+
+                if (pass.IsCompute)
+                {
+                    encoder.EndComputePass();
+                }
+                else
+                {
+                    encoder.EndRenderPass();
+                }
             }
 
-            var ctx = new RenderPassExecutionContext(this, driver, encoder);
-            pass.RunExecute(ctx);
-
-            if (pass.IsCompute)
-            {
-                encoder.EndComputePass();
-            }
-            else
-            {
-                encoder.EndRenderPass();
-            }
+            encoder.Submit();
         }
-
-        encoder.Submit();
-        ClearTransientResources();
+        finally
+        {
+            ClearTransientResources();
+        }
     }
 
     private void BeginRenderPassForPass(IRenderDriver driver, IRenderCommandEncoder encoder, RenderPass pass)
@@ -273,6 +279,7 @@ public sealed class RenderGraph : IDisposable
     public void Reset()
     {
         _passes.Clear();
+        _importedResources.Clear();
         _structureVersion++;
         ClearTransientResources();
         _isCompiled = false;
