@@ -1019,6 +1019,9 @@ public sealed unsafe class WebGPURenderDriver : IRenderDriver
 
     // --- Readback ---
 
+    [DllImport("wgpu_native", CallingConvention = CallingConvention.Cdecl)]
+    private static extern byte wgpuDevicePoll(Silk.NET.WebGPU.Device* device, byte wait, void* submissionIndex);
+
     private static readonly System.Threading.ManualResetEventSlim s_readbackDone = new(false);
     private static byte[]? s_readbackResult;
     private static string? s_readbackError;
@@ -1059,10 +1062,11 @@ public sealed unsafe class WebGPURenderDriver : IRenderDriver
         delegate* unmanaged[Cdecl]<BufferMapAsyncStatus, void*, void> cb = &OnBufferMapped;
         Wgpu.BufferMapAsync(wgpuBuf, MapMode.Read, offset, size, new PfnBufferMapCallback(cb), null);
 
-        // Pump event loop until callback fires
+        // Use DevicePoll instead of InstanceProcessEvents to avoid wgpu-native
+        // "not implemented" panic (see gfx-rs/wgpu-native issue #551)
         while (!s_readbackDone.Wait(0))
         {
-            Wgpu.InstanceProcessEvents(Instance);
+            wgpuDevicePoll(Device, 1, null);
         }
 
         if (s_readbackError != null)

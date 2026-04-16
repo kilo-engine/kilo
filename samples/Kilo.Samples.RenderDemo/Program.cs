@@ -263,7 +263,7 @@ app.AddSystem(KiloStage.Startup, world =>
             ColorTargets = skinnedPipelineKey.ColorTargets,
             VertexBuffers = skinnedPipelineKey.VertexBuffers,
             DepthStencil = skinnedPipelineKey.DepthStencil,
-        }, (nuint)ObjectData.Size, groupIndex: 1, bindGroupCount: 5)); // 5 binding sets for skinned mesh
+        }, (nuint)ObjectData.Size, groupIndex: 1, bindGroupCount: 5));
 
         // Reuse camera/object/light binding sets from basic lit
         var cameraBindingSet = driver.CreateBindingSetForPipeline(skinnedPipeline, 0, [new UniformBufferBinding { Buffer = scene.CameraBuffer, Binding = 0 }]);
@@ -314,27 +314,26 @@ app.AddSystem(KiloStage.Startup, world =>
                 new SamplerBinding { Binding = 3, Sampler = shadowSampler },
             ]);
 
-        // Create material
-        var skinnedMaterial = new Material
-        {
-            Pipeline = skinnedPipeline,
-            BindingSets = [cameraBindingSet, objectBindingSet, lightBindingSet, textureBindingSet],
-            AlbedoTexture = defaultTexture,
-            AlbedoSampler = defaultSampler,
-        };
-        int skinnedMaterialHandle = context.Materials.Count;
-        context.Materials.Add(skinnedMaterial);
-
-        // Create joint matrix buffer (will be updated by SkinnedMeshPrepareSystem)
+        // Group 4: joint matrices
         var jointBuffer = driver.CreateBuffer(new BufferDescriptor
         {
             Size = (nuint)(SkeletonData.MaxJoints * 64),
             Usage = BufferUsage.Uniform | BufferUsage.CopyDst,
         });
 
-        // Group 4: joint matrices binding set
         var jointBindingSet = driver.CreateBindingSetForPipeline(skinnedPipeline, 4,
             [new UniformBufferBinding { Buffer = jointBuffer, Binding = 0 }]);
+
+        // Create material
+        var skinnedMaterial = new Material
+        {
+            Pipeline = skinnedPipeline,
+            BindingSets = [cameraBindingSet, objectBindingSet, lightBindingSet, textureBindingSet, jointBindingSet],
+            AlbedoTexture = defaultTexture,
+            AlbedoSampler = defaultSampler,
+        };
+        int skinnedMaterialHandle = context.Materials.Count;
+        context.Materials.Add(skinnedMaterial);
 
         // Create main entity with skinned mesh
         var animatedArmEntity = world.Entity("AnimatedArm")
@@ -352,7 +351,7 @@ app.AddSystem(KiloStage.Startup, world =>
                 MeshHandle = skinnedMeshHandle,
                 MaterialHandle = skinnedMaterialHandle,
                 JointMatrixBuffer = jointBuffer,
-                JointBindingSet = jointBindingSet
+                JointBindingSet = jointBindingSet,
             });
     }
 
@@ -471,15 +470,47 @@ app.AddSystem(KiloStage.Update, world =>
         }
     }
 
-    // ── 骨骼动画：旋转下臂关节 (简单演示) ──────────────────────────────────
+    // ── G 键：切换 GLTF 动画片段 ───────────────────────────────────────────
+    if (input.IsKeyPressed((int)Key.G))
+    {
+        var clipStore = world.GetResource<AnimationClipStore>();
+        if (clipStore != null)
+        {
+            var gltfQuery = world.QueryBuilder().With<AnimationPlayer>().With<Skeleton>().Build();
+            var gltfIter = gltfQuery.Iter();
+            while (gltfIter.Next())
+            {
+                var players = gltfIter.Data<AnimationPlayer>(gltfIter.GetColumnIndexOf<AnimationPlayer>());
+                var ents = gltfIter.Entities();
+                for (int i = 0; i < gltfIter.Count; i++)
+                {
+                    var eid = (ulong)ents[i].ID;
+                    if (!clipStore.EntityClips.TryGetValue(eid, out var clips) || clips.Count <= 1) continue;
+                    var p = players[i];
+                    p.ClipIndex = (p.ClipIndex + 1) % clips.Count;
+                    p.Time = 0f;
+                    p.IsPlaying = true;
+                    players[i] = p;
+                    Console.WriteLine($"[RenderDemo] Animation clip → {clips[p.ClipIndex].Name} ({p.ClipIndex + 1}/{clips.Count})");
+                }
+            }
+        }
+    }
+
+    // ── 骨骼动画：旋转 AnimatedArm 下臂关节 (仅对无 clip 的手动动画实体) ──
+    var animClipStore = world.GetResource<AnimationClipStore>();
     var playerQuery = world.QueryBuilder().With<AnimationPlayer>().With<Skeleton>().Build();
     var playerIter = playerQuery.Iter();
     while (playerIter.Next())
     {
         var players = playerIter.Data<AnimationPlayer>(playerIter.GetColumnIndexOf<AnimationPlayer>());
         var skeletons = playerIter.Data<Skeleton>(playerIter.GetColumnIndexOf<Skeleton>());
+        var playerEntities = playerIter.Entities();
         for (int i = 0; i < playerIter.Count; i++)
         {
+            // Skip entities that have GLTF clips (handled by AnimationUpdateSystem)
+            if (animClipStore != null && animClipStore.EntityClips.ContainsKey((ulong)playerEntities[i].ID)) continue;
+
             var player = players[i];
             if (!player.IsPlaying) continue;
 
@@ -495,8 +526,7 @@ app.AddSystem(KiloStage.Update, world =>
                 var joint1Id = new EntityId((ulong)skeleton.JointEntities[1]);
                 if (world.Exists(joint1Id) && world.Has<LocalTransform>(joint1Id))
                 {
-                    // Swing the lower arm: sinusoidal rotation around Z axis
-                    float swingAngle = MathF.Sin(player.Time * 2f) * 0.8f; // ±0.8 radians (~±45 degrees)
+                    float swingAngle = MathF.Sin(player.Time * 2f) * 0.8f;
                     var rotation = Quaternion.CreateFromAxisAngle(Vector3.UnitZ, swingAngle);
                     world.Set(joint1Id, new LocalTransform
                     {
@@ -629,6 +659,7 @@ public sealed class RenderDemoPlugin : IKiloPlugin
         });
         app.AddResource(new WindowSize { Width = _settings.Width, Height = _settings.Height });
         app.AddResource(new GpuSceneData());
+        app.AddResource(new AnimationClipStore());
         // 输入
         app.AddResource(new InputState());
         app.AddResource(new InputSettings());
@@ -661,6 +692,267 @@ public sealed class RenderDemoPlugin : IKiloPlugin
         new AnimationUpdateSystem().Update(world, deltaTime);
     }
 
+    // ── GLTF 默认模型搜索 ──────────────────────────────────────────────────
+    private static string? FindDefaultModel()
+    {
+        var candidates = new[]
+        {
+            Path.Combine("docs-3rd", "bevy-main", "assets", "models", "animated", "Fox.glb"),
+            Path.Combine("docs-3rd", "bevy-main", "assets", "models", "FlightHelmet", "FlightHelmet.gltf"),
+            Path.Combine("docs-3rd", "bevy-main", "assets", "models", "CornellBox", "CornellBox.glb"),
+        };
+
+        // Try current working directory first
+        foreach (var c in candidates)
+            if (File.Exists(c)) return Path.GetFullPath(c);
+
+        // Walk up from BaseDirectory to find project root
+        var dir = AppContext.BaseDirectory;
+        for (int i = 0; i < 8; i++)
+        {
+            foreach (var c in candidates)
+            {
+                var path = Path.Combine(dir, c);
+                if (File.Exists(path)) return path;
+            }
+            var parent = Path.GetDirectoryName(dir);
+            if (parent == null) break;
+            dir = parent;
+        }
+
+        return null;
+    }
+
+    // ── GLTF 实体创建（静态 + 骨骼动画） ────────────────────────────────────
+    private static void SetupGltfEntities(
+        KiloWorld world, GltfModel gltfModel,
+        IRenderDriver driver, RenderContext context, GpuSceneData scene)
+    {
+        // Calculate model bounding box from mesh data for auto-scaling
+        float maxExtent = 0f;
+        foreach (var (meshHandle, _) in gltfModel.Primitives)
+        {
+            if (meshHandle >= 0 && meshHandle < context.Meshes.Count)
+            {
+                var vb = context.Meshes[meshHandle].VertexBuffer;
+                maxExtent = Math.Max(maxExtent, (float)vb.Size);
+            }
+        }
+
+        // Compute a scale factor to fit the model in ~3 unit height for the camera view
+        // We don't have vertex data on CPU anymore, so use a heuristic based on mesh buffer size
+        // Fox.glb: 1728 verts * 64 bytes = 110592 bytes, ~79 units tall
+        float modelScale = 1f / 40f; // Shrink to fit camera view
+        var entityPosition = new Vector3(0, -1, 0);
+
+        if (!gltfModel.IsSkinned || gltfModel.Skeleton == null)
+        {
+            // Static model: create one entity per primitive with MeshRenderer
+            foreach (var (meshHandle, materialHandle) in gltfModel.Primitives)
+            {
+                world.Entity($"GltfMesh_{meshHandle}")
+                    .Set(new LocalTransform
+                    {
+                        Position = entityPosition,
+                        Rotation = Quaternion.Identity,
+                        Scale = new Vector3(modelScale)
+                    })
+                    .Set(new LocalToWorld())
+                    .Set(new MeshRenderer { MeshHandle = meshHandle, MaterialHandle = materialHandle });
+            }
+            return;
+        }
+
+        // ── Skinned model: create joint hierarchy + skinned renderer ────────
+        var skeletonData = gltfModel.Skeleton;
+
+        // 1) Create joint entities with hierarchy
+        var jointEntities = new int[skeletonData.Joints.Length];
+        for (int j = 0; j < skeletonData.Joints.Length; j++)
+        {
+            var joint = skeletonData.Joints[j];
+            var jointEntity = world.Entity($"GltfJoint_{joint.Name}")
+                .Set(new LocalTransform
+                {
+                    Position = Vector3.Zero,
+                    Rotation = Quaternion.Identity,
+                    Scale = Vector3.One
+                })
+                .Set(new LocalToWorld());
+
+            if (joint.ParentIndex >= 0)
+            {
+                jointEntity.Set(new Parent { Id = new EntityId((ulong)jointEntities[joint.ParentIndex]) });
+            }
+
+            jointEntities[j] = (int)(uint)jointEntity.Id.Value;
+        }
+        gltfModel.JointEntityIds = jointEntities;
+
+        // 2) Create skinned pipeline
+        var skinnedVs = context.ShaderCache.GetOrCreateShader(driver, SkinnedLitShaders.WGSL, "vs_main");
+        var skinnedFs = context.ShaderCache.GetOrCreateShader(driver, SkinnedLitShaders.WGSL, "fs_main");
+
+        var skinnedPipeline = context.PipelineCache.GetOrCreate(driver, new PipelineCacheKey
+        {
+            VertexShaderSource = SkinnedLitShaders.WGSL,
+            VertexShaderEntryPoint = "vs_main",
+            FragmentShaderSource = SkinnedLitShaders.WGSL,
+            FragmentShaderEntryPoint = "fs_main",
+            Topology = DriverPrimitiveTopology.TriangleList,
+            SampleCount = 1,
+            VertexBuffers = [SkinnedMesh.Layout],
+            ColorTargets = [new ColorTargetDescriptor { Format = DriverPixelFormat.RGBA8Unorm }],
+            DepthStencil = new DepthStencilStateDescriptor
+            {
+                Format = DriverPixelFormat.Depth24Plus,
+                DepthCompare = DriverCompareFunction.Less,
+                DepthWriteEnabled = true,
+            }
+        }, () => driver.CreateRenderPipelineWithDynamicUniforms(new RenderPipelineDescriptor
+        {
+            VertexShader = skinnedVs,
+            FragmentShader = skinnedFs,
+            Topology = DriverPrimitiveTopology.TriangleList,
+            ColorTargets = [new ColorTargetDescriptor { Format = DriverPixelFormat.RGBA8Unorm }],
+            VertexBuffers = [SkinnedMesh.Layout],
+            DepthStencil = new DepthStencilStateDescriptor
+            {
+                Format = DriverPixelFormat.Depth24Plus,
+                DepthCompare = DriverCompareFunction.Less,
+                DepthWriteEnabled = true,
+            }
+        }, (nuint)ObjectData.Size, groupIndex: 1, bindGroupCount: 5));
+
+        // Shared binding sets (groups 0-3)
+        var cameraBS = driver.CreateBindingSetForPipeline(skinnedPipeline, 0,
+            [new UniformBufferBinding { Buffer = scene.CameraBuffer, Binding = 0 }]);
+        var objectBS = driver.CreateDynamicUniformBindingSet(skinnedPipeline, 1,
+            scene.ObjectDataBuffer, (nuint)ObjectData.Size);
+        var lightBS = driver.CreateBindingSetForPipeline(skinnedPipeline, 2,
+            [new UniformBufferBinding { Buffer = scene.LightBuffer, Binding = 0 }]);
+
+        // Texture + shadow binding set (group 3)
+        var shadowSampler = context.ShadowSampler!;
+        var shadowDataBuffer = context.ShadowDataBuffer!;
+
+        var placeholderDepth = driver.CreateTexture(new TextureDescriptor
+        {
+            Width = 1, Height = 1, Format = DriverPixelFormat.Depth24Plus,
+            Usage = TextureUsage.ShaderBinding | TextureUsage.RenderAttachment,
+        });
+        var placeholderDepthView = driver.CreateTextureView(placeholderDepth, new TextureViewDescriptor
+        {
+            Format = DriverPixelFormat.Depth24Plus, Dimension = TextureViewDimension.View2D, MipLevelCount = 1,
+        });
+
+        var defaultSampler = driver.CreateSampler(new SamplerDescriptor
+        {
+            MinFilter = FilterMode.Linear, MagFilter = FilterMode.Linear, MipFilter = FilterMode.Linear,
+            AddressModeU = WrapMode.Repeat, AddressModeV = WrapMode.Repeat, AddressModeW = WrapMode.Repeat,
+        });
+
+        // 3) Create skinned material + joint buffer per primitive
+        var gltfEntity = world.Entity("GltfSkinnedModel")
+            .Set(new LocalTransform
+            {
+                Position = entityPosition,
+                Rotation = Quaternion.CreateFromAxisAngle(Vector3.UnitY, MathF.PI),
+                Scale = new Vector3(modelScale)
+            })
+            .Set(new LocalToWorld())
+            .Set(new Skeleton { Data = skeletonData, JointEntities = jointEntities })
+            .Set(new AnimationPlayer { ClipIndex = 0, Time = 0f, IsPlaying = true, Loop = true });
+
+        // Register animation clips in the store
+        var clipStore = world.GetResource<AnimationClipStore>();
+        if (clipStore != null && gltfModel.Animations.Count > 0)
+        {
+            clipStore.EntityClips[(ulong)gltfEntity.Id.Value] = gltfModel.Animations;
+            Console.WriteLine($"[Kilo] Animations: {string.Join(", ", gltfModel.Animations.Select(a => $"{a.Name}({a.Duration:F2}s)"))}");
+        }
+
+        // For skinned meshes, we use the first primitive's mesh for the SkinnedMeshRenderer
+        // (Multi-primitive skinned models would need multiple renderers, simplified here)
+        var (firstMeshHandle, firstMatHandle) = gltfModel.Primitives[0];
+
+        // Re-create material with skinned pipeline using GLTF texture if available
+        var origMaterial = context.Materials[firstMatHandle];
+        var albedoTexture = origMaterial.AlbedoTexture;
+        var albedoSampler = origMaterial.AlbedoSampler ?? defaultSampler;
+
+        ITextureView albedoView;
+        if (albedoTexture != null)
+        {
+            albedoView = driver.CreateTextureView(albedoTexture, new TextureViewDescriptor
+            {
+                Format = DriverPixelFormat.RGBA8Unorm, Dimension = TextureViewDimension.View2D, MipLevelCount = 1,
+            });
+        }
+        else
+        {
+            var fallback = driver.CreateTexture(new TextureDescriptor
+            {
+                Width = 1, Height = 1, Format = DriverPixelFormat.RGBA8Unorm,
+                Usage = TextureUsage.CopyDst | TextureUsage.ShaderBinding,
+            });
+            fallback.UploadData<byte>([255, 255, 255, 255]);
+            albedoView = driver.CreateTextureView(fallback, new TextureViewDescriptor
+            {
+                Format = DriverPixelFormat.RGBA8Unorm, Dimension = TextureViewDimension.View2D, MipLevelCount = 1,
+            });
+        }
+
+        // Joint matrix buffer (group 4)
+        var jointBuffer = driver.CreateBuffer(new BufferDescriptor
+        {
+            Size = (nuint)(SkeletonData.MaxJoints * 64),
+            Usage = BufferUsage.Uniform | BufferUsage.CopyDst,
+        });
+
+        var textureBS = driver.CreateBindingSetForPipeline(skinnedPipeline, 3,
+            [new UniformBufferBinding { Buffer = shadowDataBuffer, Binding = 4 }],
+            [
+                new TextureBinding { Binding = 0, TextureView = albedoView },
+                new TextureBinding { Binding = 2, TextureView = placeholderDepthView },
+            ],
+            [
+                new SamplerBinding { Binding = 1, Sampler = albedoSampler },
+                new SamplerBinding { Binding = 3, Sampler = shadowSampler },
+            ]);
+
+        // Group 4: joint matrices
+        var jointBS = driver.CreateBindingSetForPipeline(skinnedPipeline, 4,
+            [new UniformBufferBinding { Buffer = jointBuffer, Binding = 0 }]);
+
+        var skinnedMaterial = new Material
+        {
+            Pipeline = skinnedPipeline,
+            BindingSets = [cameraBS, objectBS, lightBS, textureBS, jointBS],
+            AlbedoTexture = albedoTexture,
+            AlbedoSampler = albedoSampler,
+        };
+        int skinnedMatHandle = context.Materials.Count;
+        context.Materials.Add(skinnedMaterial);
+
+        // Additional primitives as separate entities sharing the skeleton
+        for (int p = 0; p < gltfModel.Primitives.Count; p++)
+        {
+            var (meshH, _) = gltfModel.Primitives[p];
+            var targetEntity = p == 0 ? gltfEntity : world.Entity($"GltfSkinnedPart_{p}")
+                .Set(new LocalTransform { Position = Vector3.Zero, Rotation = Quaternion.Identity, Scale = Vector3.One })
+                .Set(new LocalToWorld());
+
+            targetEntity.Set(new SkinnedMeshRenderer
+            {
+                MeshHandle = meshH,
+                MaterialHandle = skinnedMatHandle,
+                JointMatrixBuffer = jointBuffer,
+                JointBindingSet = jointBS,
+            });
+        }
+    }
+
     public void Run(KiloApp app)
     {
         Console.WriteLine("[Kilo] Creating window...");
@@ -677,21 +969,17 @@ public sealed class RenderDemoPlugin : IKiloPlugin
             WireInputEvents(window, app.World);
 
             // Load GLTF model if path provided
-            if (_modelPath != null && File.Exists(_modelPath))
+            var modelPath = _modelPath ?? FindDefaultModel();
+            if (modelPath != null && File.Exists(modelPath))
             {
-                Console.WriteLine($"[Kilo] Loading GLTF model: {_modelPath}");
-                var gltfModel = GltfLoader.Load(_modelPath, driver, context, scene);
-                foreach (var (meshHandle, materialHandle) in gltfModel.Primitives)
-                {
-                    app.World.Entity($"GltfMesh_{meshHandle}")
-                        .Set(new LocalTransform { Position = Vector3.Zero, Rotation = Quaternion.Identity, Scale = Vector3.One })
-                        .Set(new LocalToWorld())
-                        .Set(new MeshRenderer { MeshHandle = meshHandle, MaterialHandle = materialHandle });
-                }
-                Console.WriteLine($"[Kilo] Loaded {gltfModel.Primitives.Count} mesh primitives from GLTF.");
+                Console.WriteLine($"[Kilo] Loading GLTF model: {modelPath}");
+                var gltfModel = GltfLoader.Load(modelPath, driver, context, scene);
+                SetupGltfEntities(app.World, gltfModel, driver, context, scene);
+                Console.WriteLine($"[Kilo] Loaded {gltfModel.Primitives.Count} primitives, " +
+                    $"Skinned={gltfModel.IsSkinned}, Animations={gltfModel.Animations.Count}");
             }
 
-            Console.WriteLine("[Kilo] WebGPU initialized. WASD=Move, QE=Up/Down, B=Toggle Blur, P=Screenshot, N=Play/Pause, M=Toggle Loop");
+            Console.WriteLine("[Kilo] WebGPU initialized. WASD=Move, QE=Up/Down, B=Toggle Blur, P=Screenshot, N=Play/Pause, M=Toggle Loop, G=Switch Animation");
         };
 
         window.Render += _ =>
@@ -1330,6 +1618,8 @@ public sealed class BlurRenderSystem
                 encoder.SetBindingSet(2, material.BindingSets[2]);
                 if (material.BindingSets.Length > 3)
                     encoder.SetBindingSet(3, material.BindingSets[3]);
+                if (draw.IsSkinned && draw.JointBindingSet != null)
+                    encoder.SetBindingSet(4, draw.JointBindingSet);
                 encoder.DrawIndexed((int)mesh.IndexCount);
             }
         });
@@ -1461,10 +1751,14 @@ public sealed class BlurRenderSystem
 
             graph.AddPass("ScreenshotCopy", setup: pass =>
             {
-                pass.ReadTexture(copySource);
+                // Resolve source inside setup — offscreenColor/blurredColor are assigned
+                // by earlier setup callbacks that run before this one during Compile.
+                var src = BlurEnabled ? blurredColor : offscreenColor;
+                pass.ReadTexture(src);
             }, execute: ctx =>
             {
-                var texture = ctx.GetTexture(copySource);
+                var src = BlurEnabled ? blurredColor : offscreenColor;
+                var texture = ctx.GetTexture(src);
                 ctx.Encoder.CopyTextureToBuffer(texture, new TextureCopyRegion
                 {
                     Width = texture.Width,

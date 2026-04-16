@@ -7,6 +7,28 @@ using System.Linq;
 namespace Kilo.Rendering.Assets;
 
 /// <summary>
+/// Recursively collects all nodes in the scene graph.
+/// </summary>
+internal static class GltfNodeCollector
+{
+    public static List<SharpGLTF.Schema2.Node> CollectAll(IEnumerable<SharpGLTF.Schema2.Node> roots)
+    {
+        var result = new List<SharpGLTF.Schema2.Node>();
+        CollectRecursive(roots, result);
+        return result;
+    }
+
+    private static void CollectRecursive(IEnumerable<SharpGLTF.Schema2.Node> nodes, List<SharpGLTF.Schema2.Node> result)
+    {
+        foreach (var node in nodes)
+        {
+            result.Add(node);
+            CollectRecursive(node.VisualChildren, result);
+        }
+    }
+}
+
+/// <summary>
 /// Result of loading a GLTF model: a list of (MeshHandle, MaterialHandle) pairs,
 /// one per primitive in the model.
 /// </summary>
@@ -37,18 +59,18 @@ public static class GltfLoader
         var model = SharpGLTF.Schema2.ModelRoot.Load(path);
         var result = new GltfModel();
 
+        // Collect all nodes recursively (VisualChildren only returns direct children)
+        var allNodes = GltfNodeCollector.CollectAll(model.DefaultScene.VisualChildren);
+
         // Find the first skin in the model (skins are node-level, not primitive-level)
         SharpGLTF.Schema2.Skin? firstSkin = null;
-        SharpGLTF.Schema2.Node? skinnedNode = null;
 
-        // Look for skinned meshes by checking if nodes have skins
-        foreach (var node in model.DefaultScene.VisualChildren)
+        foreach (var node in allNodes)
         {
             if (node.Mesh == null) continue;
             if (node.Skin != null)
             {
                 firstSkin = node.Skin;
-                skinnedNode = node;
                 break;
             }
         }
@@ -63,7 +85,7 @@ public static class GltfLoader
         // Load all animations
         result.Animations = LoadAnimations(model, result.Skeleton);
 
-        foreach (var node in model.DefaultScene.VisualChildren)
+        foreach (var node in allNodes)
         {
             if (node.Mesh == null) continue;
 
@@ -95,6 +117,13 @@ public static class GltfLoader
         var normAccessor = primitive.GetVertexAccessor("NORMAL");
         var normals = normAccessor?.AsVector3Array();
 
+        // Generate flat normals if the primitive has no NORMAL attribute
+        Vector3[]? generatedNormals = null;
+        if (normals == null)
+        {
+            generatedNormals = GenerateFlatNormals(positions, primitive.GetIndices());
+        }
+
         var uvAccessor = primitive.GetVertexAccessor("TEXCOORD_0");
         var uvs = uvAccessor?.AsVector2Array();
 
@@ -124,6 +153,11 @@ public static class GltfLoader
                 if (normals != null && i < normals.Count)
                 {
                     var n = normals[i];
+                    System.Buffer.BlockCopy(new[] { n.X, n.Y, n.Z }, 0, vertexData, off + 12, 12);
+                }
+                else if (generatedNormals != null)
+                {
+                    var n = generatedNormals[i];
                     System.Buffer.BlockCopy(new[] { n.X, n.Y, n.Z }, 0, vertexData, off + 12, 12);
                 }
 
@@ -172,6 +206,13 @@ public static class GltfLoader
                     vertices[off + 4] = n.Y;
                     vertices[off + 5] = n.Z;
                 }
+                else if (generatedNormals != null)
+                {
+                    var n = generatedNormals[i];
+                    vertices[off + 3] = n.X;
+                    vertices[off + 4] = n.Y;
+                    vertices[off + 5] = n.Z;
+                }
 
                 if (uvs != null && i < uvs.Count)
                 {
@@ -186,9 +227,20 @@ public static class GltfLoader
             System.Buffer.BlockCopy(vertices, 0, vertexData, 0, vertexData.Length);
         }
 
-        // Index data
+        // Index data — some models use non-indexed drawing (e.g. Fox.glb)
         var indexList = primitive.GetIndices();
-        var indexData = indexList.ToArray();
+        uint[] indexData;
+        if (indexList != null)
+        {
+            indexData = indexList.ToArray();
+        }
+        else
+        {
+            // Generate sequential indices for non-indexed primitives
+            indexData = new uint[vertexCount];
+            for (int i = 0; i < vertexCount; i++)
+                indexData[i] = (uint)i;
+        }
 
         // Create GPU buffers
         var vb = driver.CreateBuffer(new BufferDescriptor
@@ -534,5 +586,55 @@ public static class GltfLoader
         float dt = keys[idx + 1].Time - keys[idx].Time;
         float alpha = dt > 0 ? (t - keys[idx].Time) / dt : 0f;
         return Quaternion.Slerp(keys[idx].Value, keys[idx + 1].Value, alpha);
+    }
+
+    /// <summary>
+    /// Generates flat (per-face) normals for primitives that lack a NORMAL attribute.
+    /// Works with both indexed and non-indexed triangle lists.
+    /// </summary>
+    private static Vector3[] GenerateFlatNormals(
+        IReadOnlyList<Vector3> positions,
+        IEnumerable<uint>? indices)
+    {
+        var normals = new Vector3[positions.Count];
+        var normalAccum = new Vector3[positions.Count];
+
+        if (indices != null)
+        {
+            var indexList = indices.ToList();
+            for (int i = 0; i + 2 < indexList.Count; i += 3)
+            {
+                var v0 = positions[(int)indexList[i]];
+                var v1 = positions[(int)indexList[i + 1]];
+                var v2 = positions[(int)indexList[i + 2]];
+                var faceNormal = Vector3.Normalize(Vector3.Cross(v1 - v0, v2 - v0));
+                normalAccum[(int)indexList[i]] += faceNormal;
+                normalAccum[(int)indexList[i + 1]] += faceNormal;
+                normalAccum[(int)indexList[i + 2]] += faceNormal;
+            }
+        }
+        else
+        {
+            // Non-indexed: every 3 consecutive vertices form a triangle
+            for (int i = 0; i + 2 < positions.Count; i += 3)
+            {
+                var v0 = positions[i];
+                var v1 = positions[i + 1];
+                var v2 = positions[i + 2];
+                var faceNormal = Vector3.Normalize(Vector3.Cross(v1 - v0, v2 - v0));
+                normalAccum[i] += faceNormal;
+                normalAccum[i + 1] += faceNormal;
+                normalAccum[i + 2] += faceNormal;
+            }
+        }
+
+        for (int i = 0; i < normals.Length; i++)
+        {
+            normals[i] = normalAccum[i].Length() > 0
+                ? Vector3.Normalize(normalAccum[i])
+                : Vector3.UnitZ;
+        }
+
+        return normals;
     }
 }

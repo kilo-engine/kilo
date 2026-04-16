@@ -46,15 +46,17 @@ public sealed class PrepareGpuSceneSystem
         }
 
         // --- Draw objects (skip culled entities) ---
+        int maxObjects = (int)(scene.ObjectDataBuffer.Size / 256);
+        var objectData = new ObjectData[maxObjects];
+        var drawData = new List<DrawData>();
+
+        // Static meshes
         var meshQuery = world.QueryBuilder()
             .With<MeshRenderer>()
             .With<LocalToWorld>()
             .Without<Culled>()
+            .Without<SkinnedMeshRenderer>()
             .Build();
-
-        int maxObjects = (int)(scene.ObjectDataBuffer.Size / 256);
-        var objectData = new ObjectData[maxObjects];
-        var drawData = new List<DrawData>();
 
         var meshIter = meshQuery.Iter();
         while (meshIter.Next())
@@ -70,7 +72,6 @@ public sealed class PrepareGpuSceneSystem
                 objectData[index].Model = transforms[i].Value;
                 objectData[index].MaterialId = renderers[i].MaterialHandle;
 
-                // Populate material properties into ObjectData
                 if (renderers[i].MaterialHandle >= 0 && renderers[i].MaterialHandle < context.Materials.Count)
                 {
                     var material = context.Materials[renderers[i].MaterialHandle];
@@ -87,6 +88,50 @@ public sealed class PrepareGpuSceneSystem
                 {
                     MeshHandle = renderers[i].MeshHandle,
                     MaterialId = renderers[i].MaterialHandle,
+                    IsSkinned = false,
+                });
+            }
+        }
+
+        // Skinned meshes
+        var skinnedQuery = world.QueryBuilder()
+            .With<SkinnedMeshRenderer>()
+            .With<LocalToWorld>()
+            .Without<Culled>()
+            .Build();
+
+        var skinnedIter = skinnedQuery.Iter();
+        while (skinnedIter.Next())
+        {
+            var renderers = skinnedIter.Data<SkinnedMeshRenderer>(skinnedIter.GetColumnIndexOf<SkinnedMeshRenderer>());
+            var transforms = skinnedIter.Data<LocalToWorld>(skinnedIter.GetColumnIndexOf<LocalToWorld>());
+
+            for (int i = 0; i < skinnedIter.Count; i++)
+            {
+                if (drawData.Count >= maxObjects) break;
+
+                int index = drawData.Count;
+                objectData[index].Model = transforms[i].Value;
+                objectData[index].MaterialId = renderers[i].MaterialHandle;
+
+                if (renderers[i].MaterialHandle >= 0 && renderers[i].MaterialHandle < context.Materials.Count)
+                {
+                    var material = context.Materials[renderers[i].MaterialHandle];
+                    objectData[index].BaseColor = material.BaseColor;
+                    objectData[index].UseTexture = material.UseTexture ? 1 : 0;
+                }
+                else
+                {
+                    objectData[index].BaseColor = Vector4.One;
+                    objectData[index].UseTexture = 0;
+                }
+
+                drawData.Add(new DrawData
+                {
+                    MeshHandle = renderers[i].MeshHandle,
+                    MaterialId = renderers[i].MaterialHandle,
+                    IsSkinned = true,
+                    JointBindingSet = renderers[i].JointBindingSet,
                 });
             }
         }

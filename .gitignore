@@ -399,3 +399,6 @@ FodyWeavers.xsd
 
 # Third-party reference materials (local only)
 docs-3rd/
+.qwen
+.claude
+.idea

@@ -32,6 +32,8 @@ public struct DrawData
 {
     public int MeshHandle;
     public int MaterialId;
+    public bool IsSkinned;
+    public IBindingSet? JointBindingSet;
 }
 
 /// <summary>
