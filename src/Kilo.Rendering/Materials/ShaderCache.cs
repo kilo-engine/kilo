@@ -1,6 +1,6 @@
 using Kilo.Rendering.Driver;
 
-namespace Kilo.Rendering.Resources;
+namespace Kilo.Rendering.Materials;
 
 /// <summary>
 /// Caches shader modules to avoid recreating them every frame.

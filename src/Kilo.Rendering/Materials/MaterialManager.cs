@@ -3,9 +3,10 @@ using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.PixelFormats;
 using Kilo.Rendering.Driver;
 using Kilo.Rendering.RenderGraph;
+using Kilo.Rendering.Scene;
 using Kilo.Rendering.Shaders;
 
-namespace Kilo.Rendering.Resources;
+namespace Kilo.Rendering.Materials;
 
 /// <summary>
 /// Manages creation of materials with configurable properties.

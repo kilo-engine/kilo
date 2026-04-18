@@ -1,6 +1,6 @@
 using System.Numerics;
 
-namespace Kilo.Rendering.Resources;
+namespace Kilo.Rendering.Materials;
 
 /// <summary>
 /// Descriptor for creating a material with configurable properties.

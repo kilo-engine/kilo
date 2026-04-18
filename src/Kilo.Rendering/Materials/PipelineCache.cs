@@ -1,6 +1,6 @@
 using Kilo.Rendering.Driver;
 
-namespace Kilo.Rendering.Resources;
+namespace Kilo.Rendering.Materials;
 
 /// <summary>
 /// Key used to identify a cached render pipeline.

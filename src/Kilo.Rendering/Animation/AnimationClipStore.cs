@@ -1,4 +1,4 @@
-namespace Kilo.Rendering.Resources;
+namespace Kilo.Rendering.Animation;
 
 /// <summary>
 /// Stores animation clips keyed by entity, enabling the AnimationUpdateSystem

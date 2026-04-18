@@ -1,6 +1,6 @@
 using System.Numerics;
 
-namespace Kilo.Rendering.Resources;
+namespace Kilo.Rendering.Animation;
 
 /// <summary>
 /// Data for a single joint in a skeleton.

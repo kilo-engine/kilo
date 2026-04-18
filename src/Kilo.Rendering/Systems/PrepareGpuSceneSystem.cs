@@ -1,7 +1,9 @@
 using System.Numerics;
 using System.Runtime.InteropServices;
 using Kilo.ECS;
-using Kilo.Rendering.Resources;
+using Kilo.Rendering.Meshes;
+using Kilo.Rendering.Materials;
+using Kilo.Rendering.Scene;
 
 namespace Kilo.Rendering;
 

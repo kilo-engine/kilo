@@ -4,7 +4,7 @@ using Kilo.Rendering.RenderGraph;
 using SixLabors.ImageSharp.Processing;
 using SixLabors.ImageSharp.Drawing.Processing;
 
-namespace Kilo.Rendering.Resources;
+namespace Kilo.Rendering.Text;
 
 /// <summary>
 /// Glyph info stored in the font atlas.

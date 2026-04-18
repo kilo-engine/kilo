@@ -1,6 +1,6 @@
 using System.Numerics;
 
-namespace Kilo.Rendering.Resources;
+namespace Kilo.Rendering.Scene;
 
 /// <summary>
 /// View frustum for culling, built from a ViewProjection matrix.

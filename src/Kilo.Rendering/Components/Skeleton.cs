@@ -1,5 +1,9 @@
 using System.Numerics;
-using Kilo.Rendering.Resources;
+using Kilo.Rendering.Meshes;
+using Kilo.Rendering.Materials;
+using Kilo.Rendering.Animation;
+using Kilo.Rendering.Text;
+using Kilo.Rendering.Scene;
 
 namespace Kilo.Rendering;
 

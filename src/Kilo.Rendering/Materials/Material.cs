@@ -1,7 +1,7 @@
 using System.Numerics;
 using Kilo.Rendering.Driver;
 
-namespace Kilo.Rendering.Resources;
+namespace Kilo.Rendering.Materials;
 
 /// <summary>
 /// Material resource containing pipeline, binding sets, and texture bindings.

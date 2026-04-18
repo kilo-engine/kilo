@@ -1,6 +1,6 @@
 using System.Numerics;
 
-namespace Kilo.Rendering.Resources;
+namespace Kilo.Rendering.Animation;
 
 /// <summary>
 /// A single keyframe for a joint's transform property.

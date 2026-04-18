@@ -2,7 +2,7 @@ using System.Numerics;
 using System.Runtime.InteropServices;
 using Kilo.Rendering.Driver;
 
-namespace Kilo.Rendering.Resources;
+namespace Kilo.Rendering.Scene;
 
 /// <summary>
 /// Per-frame GPU scene data buffers and draw information.

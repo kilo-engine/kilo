@@ -1,7 +1,7 @@
 using System.Numerics;
 using Kilo.Rendering.Driver;
 
-namespace Kilo.Rendering.Resources;
+namespace Kilo.Rendering.Meshes;
 
 /// <summary>
 /// GPU mesh resource containing vertex and index buffers.

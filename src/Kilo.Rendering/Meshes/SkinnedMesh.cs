@@ -1,7 +1,7 @@
 using System.Numerics;
 using Kilo.Rendering.Driver;
 
-namespace Kilo.Rendering.Resources;
+namespace Kilo.Rendering.Meshes;
 
 /// <summary>
 /// Skinned vertex: pos(3) + normal(3) + uv(2) + joints(4 uint) + weights(4 float) = 64 bytes per vertex

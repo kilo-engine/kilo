@@ -23,7 +23,11 @@ using Kilo.Rendering.Assets;
 using Kilo.Rendering.Driver;
 using Kilo.Rendering.Driver.WebGPUImpl;
 using Kilo.Rendering.RenderGraph;
-using Kilo.Rendering.Resources;
+using Kilo.Rendering.Meshes;
+using Kilo.Rendering.Materials;
+using Kilo.Rendering.Animation;
+using Kilo.Rendering.Text;
+using Kilo.Rendering.Scene;
 using Kilo.Rendering.Shaders;
 using Silk.NET.Input;
 using Silk.NET.Maths;
@@ -31,7 +35,7 @@ using Silk.NET.Windowing;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.PixelFormats;
 using Parent = TinyEcs.Parent;
-using JointInfo = Kilo.Rendering.Resources.JointInfo;
+using JointInfo = Kilo.Rendering.Animation.JointInfo;
 
 var app = new KiloApp();
 var settings = new RenderSettings
@@ -246,7 +250,7 @@ app.AddSystem(KiloStage.Startup, world =>
             Topology = DriverPrimitiveTopology.TriangleList,
             SampleCount = 1,
             VertexBuffers = [SkinnedMesh.Layout],
-            ColorTargets = [new ColorTargetDescriptor { Format = DriverPixelFormat.RGBA8Unorm }],
+            ColorTargets = [new ColorTargetDescriptor { Format = driver.SwapchainFormat }],
             DepthStencil = new DepthStencilStateDescriptor
             {
                 Format = DriverPixelFormat.Depth24Plus,
@@ -666,7 +670,7 @@ public sealed class RenderDemoPlugin : IKiloPlugin
 
         // 系统
         app.AddSystem(KiloStage.Update, AnimationUpdateWrapper);
-        app.AddSystem(KiloStage.PostUpdate, ComputeLocalToWorld);
+        app.AddSystem(KiloStage.PostUpdate, new LocalToWorldSystem().Update);
         app.AddSystem(KiloStage.PostUpdate, new SkinnedMeshPrepareSystem().Update);
         app.AddSystem(KiloStage.First, new CameraSystem().Update);
         app.AddSystem(KiloStage.PostUpdate, new FrustumCullingSystem().Update);
@@ -794,7 +798,7 @@ public sealed class RenderDemoPlugin : IKiloPlugin
             Topology = DriverPrimitiveTopology.TriangleList,
             SampleCount = 1,
             VertexBuffers = [SkinnedMesh.Layout],
-            ColorTargets = [new ColorTargetDescriptor { Format = DriverPixelFormat.RGBA8Unorm }],
+            ColorTargets = [new ColorTargetDescriptor { Format = driver.SwapchainFormat }],
             DepthStencil = new DepthStencilStateDescriptor
             {
                 Format = DriverPixelFormat.Depth24Plus,
@@ -806,7 +810,7 @@ public sealed class RenderDemoPlugin : IKiloPlugin
             VertexShader = skinnedVs,
             FragmentShader = skinnedFs,
             Topology = DriverPrimitiveTopology.TriangleList,
-            ColorTargets = [new ColorTargetDescriptor { Format = DriverPixelFormat.RGBA8Unorm }],
+            ColorTargets = [new ColorTargetDescriptor { Format = driver.SwapchainFormat }],
             VertexBuffers = [SkinnedMesh.Layout],
             DepthStencil = new DepthStencilStateDescriptor
             {
@@ -949,7 +953,7 @@ public sealed class RenderDemoPlugin : IKiloPlugin
     public void Run(KiloApp app)
     {
         Console.WriteLine("[Kilo] Creating window...");
-        var window = CreateWindow(_settings);
+        var window = WindowHelper.CreateWindow(_settings);
         var context = app.World.GetResource<RenderContext>();
         var scene = app.World.GetResource<GpuSceneData>();
 
@@ -958,8 +962,8 @@ public sealed class RenderDemoPlugin : IKiloPlugin
             Console.WriteLine("[Kilo] Window loaded, initializing WebGPU...");
             var driver = WebGPUDriverFactory.Create(window, _settings);
             context.Driver = driver;
-            InitializeResources(context, scene, driver);
-            WireInputEvents(window, app.World);
+            SceneInitializer.Initialize(context, scene, driver);
+            InputWiring.WireInputEvents(window, app.World);
 
             // Load GLTF model if path provided
             var modelPath = _modelPath ?? FindDefaultModel();
@@ -1021,387 +1025,6 @@ public sealed class RenderDemoPlugin : IKiloPlugin
         window.Dispose();
     }
 
-    private static IWindow CreateWindow(RenderSettings settings)
-    {
-        var options = WindowOptions.Default;
-        options.Size = new Vector2D<int>(settings.Width, settings.Height);
-        options.Title = settings.Title;
-        options.VSync = settings.VSync;
-        options.API = GraphicsAPI.None;
-        options.IsContextControlDisabled = true;
-        options.ShouldSwapAutomatically = false;
-        return Window.Create(options);
-    }
-
-    // ── 输入事件连线 ─────────────────────────────────────────────────────────
-    private static void WireInputEvents(IWindow window, KiloWorld world)
-    {
-        var inputState = world.GetResource<InputState>();
-        var inputContext = window.CreateInput();
-
-        foreach (var keyboard in inputContext.Keyboards)
-        {
-            keyboard.KeyDown += (_, key, _) =>
-            {
-                int code = (int)key;
-                if (code >= 0 && code < 512)
-                {
-                    inputState.KeysDown[code] = true;
-                    inputState.KeysPressed[code] = true;
-                }
-            };
-            keyboard.KeyUp += (_, key, _) =>
-            {
-                int code = (int)key;
-                if (code >= 0 && code < 512)
-                {
-                    inputState.KeysDown[code] = false;
-                    inputState.KeysReleased[code] = true;
-                }
-            };
-        }
-
-        foreach (var mouse in inputContext.Mice)
-        {
-            mouse.MouseMove += (_, position) =>
-            {
-                var newPos = new Vector2((float)position.X, (float)position.Y);
-                inputState.MouseDelta += newPos - inputState.MousePosition;
-                inputState.MousePosition = newPos;
-            };
-            mouse.MouseDown += (_, button) =>
-            {
-                int idx = (int)button;
-                if (idx >= 0 && idx < 5) inputState.MouseButtonsDown[idx] = true;
-            };
-            mouse.MouseUp += (_, button) =>
-            {
-                int idx = (int)button;
-                if (idx >= 0 && idx < 5) inputState.MouseButtonsDown[idx] = false;
-            };
-            mouse.Scroll += (_, offset) =>
-            {
-                inputState.ScrollDelta += (float)offset.Y;
-            };
-        }
-    }
-
-    // ── GPU 资源初始化：3D + 2D + 后处理 ──────────────────────────────────────
-    private static void InitializeResources(RenderContext context, GpuSceneData scene, IRenderDriver driver)
-    {
-        // --- GPU 场景缓冲区 ---
-        const int ObjectBufferSize = 64 * 1024;
-        const int LightBufferSize = 4 * 1024;
-
-        scene.CameraBuffer = driver.CreateBuffer(new BufferDescriptor
-        {
-            Size = (nuint)CameraData.Size,
-            Usage = BufferUsage.Uniform | BufferUsage.CopyDst,
-        });
-        scene.ObjectDataBuffer = driver.CreateBuffer(new BufferDescriptor
-        {
-            Size = (nuint)ObjectBufferSize,
-            Usage = BufferUsage.Uniform | BufferUsage.CopyDst,
-        });
-        scene.LightBuffer = driver.CreateBuffer(new BufferDescriptor
-        {
-            Size = (nuint)LightBufferSize,
-            Usage = BufferUsage.Uniform | BufferUsage.CopyDst,
-        });
-
-        // --- 默认白色 1x1 纹理 + 采样器 ---
-        var defaultTexture = driver.CreateTexture(new TextureDescriptor
-        {
-            Width = 1, Height = 1, Format = DriverPixelFormat.RGBA8Unorm,
-            Usage = TextureUsage.CopyDst | TextureUsage.ShaderBinding,
-        });
-        defaultTexture.UploadData<byte>([255, 255, 255, 255]);
-        var defaultTextureView = driver.CreateTextureView(defaultTexture, new TextureViewDescriptor
-        {
-            Format = DriverPixelFormat.RGBA8Unorm, Dimension = TextureViewDimension.View2D, MipLevelCount = 1,
-        });
-        var defaultSampler = driver.CreateSampler(new SamplerDescriptor
-        {
-            MinFilter = FilterMode.Linear, MagFilter = FilterMode.Linear, MipFilter = FilterMode.Linear,
-            AddressModeU = WrapMode.Repeat, AddressModeV = WrapMode.Repeat, AddressModeW = WrapMode.Repeat,
-        });
-
-        // --- Cube 网格 (pos3 + normal3 + uv2 = 8 floats) ---
-        float[] cubeVertices =
-        [
-            -0.5f, -0.5f,  0.5f,  0.0f,  0.0f,  1.0f,  0.0f, 0.0f,
-             0.5f, -0.5f,  0.5f,  0.0f,  0.0f,  1.0f,  1.0f, 0.0f,
-             0.5f,  0.5f,  0.5f,  0.0f,  0.0f,  1.0f,  1.0f, 1.0f,
-            -0.5f,  0.5f,  0.5f,  0.0f,  0.0f,  1.0f,  0.0f, 1.0f,
-            -0.5f, -0.5f, -0.5f,  0.0f,  0.0f, -1.0f,  1.0f, 0.0f,
-            -0.5f,  0.5f, -0.5f,  0.0f,  0.0f, -1.0f,  1.0f, 1.0f,
-             0.5f,  0.5f, -0.5f,  0.0f,  0.0f, -1.0f,  0.0f, 1.0f,
-             0.5f, -0.5f, -0.5f,  0.0f,  0.0f, -1.0f,  0.0f, 0.0f,
-            -0.5f,  0.5f, -0.5f,  0.0f,  1.0f,  0.0f,  0.0f, 1.0f,
-            -0.5f,  0.5f,  0.5f,  0.0f,  1.0f,  0.0f,  0.0f, 0.0f,
-             0.5f,  0.5f,  0.5f,  0.0f,  1.0f,  0.0f,  1.0f, 0.0f,
-             0.5f,  0.5f, -0.5f,  0.0f,  1.0f,  0.0f,  1.0f, 1.0f,
-            -0.5f, -0.5f, -0.5f,  0.0f, -1.0f,  0.0f,  0.0f, 0.0f,
-             0.5f, -0.5f, -0.5f,  0.0f, -1.0f,  0.0f,  1.0f, 0.0f,
-             0.5f, -0.5f,  0.5f,  0.0f, -1.0f,  0.0f,  1.0f, 1.0f,
-            -0.5f, -0.5f,  0.5f,  0.0f, -1.0f,  0.0f,  0.0f, 1.0f,
-             0.5f, -0.5f, -0.5f,  1.0f,  0.0f,  0.0f,  1.0f, 0.0f,
-             0.5f,  0.5f, -0.5f,  1.0f,  0.0f,  0.0f,  1.0f, 1.0f,
-             0.5f,  0.5f,  0.5f,  1.0f,  0.0f,  0.0f,  0.0f, 1.0f,
-             0.5f, -0.5f,  0.5f,  1.0f,  0.0f,  0.0f,  0.0f, 0.0f,
-            -0.5f, -0.5f, -0.5f, -1.0f,  0.0f,  0.0f,  0.0f, 0.0f,
-            -0.5f, -0.5f,  0.5f, -1.0f,  0.0f,  0.0f,  1.0f, 0.0f,
-            -0.5f,  0.5f,  0.5f, -1.0f,  0.0f,  0.0f,  1.0f, 1.0f,
-            -0.5f,  0.5f, -0.5f, -1.0f,  0.0f,  0.0f,  0.0f, 1.0f,
-        ];
-        uint[] cubeIndices =
-        [
-            0, 1, 2,  0, 2, 3,
-            4, 5, 6,  4, 6, 7,
-            8, 9, 10,  8, 10, 11,
-            12, 13, 14,  12, 14, 15,
-            16, 17, 18,  16, 18, 19,
-            20, 21, 22,  20, 22, 23,
-        ];
-
-        var cubeVertexBuffer = driver.CreateBuffer(new BufferDescriptor
-        {
-            Size = (nuint)(cubeVertices.Length * sizeof(float)),
-            Usage = BufferUsage.Vertex | BufferUsage.CopyDst,
-        });
-        cubeVertexBuffer.UploadData<float>(cubeVertices);
-        var cubeIndexBuffer = driver.CreateBuffer(new BufferDescriptor
-        {
-            Size = (nuint)(cubeIndices.Length * sizeof(uint)),
-            Usage = BufferUsage.Index | BufferUsage.CopyDst,
-        });
-        cubeIndexBuffer.UploadData<uint>(cubeIndices);
-
-        var cubeMesh = new Mesh
-        {
-            VertexBuffer = cubeVertexBuffer,
-            IndexBuffer = cubeIndexBuffer,
-            IndexCount = (uint)cubeIndices.Length,
-            Layouts =
-            [
-                new VertexBufferLayout
-                {
-                    ArrayStride = 8 * sizeof(float),
-                    Attributes =
-                    [
-                        new VertexAttributeDescriptor { ShaderLocation = 0, Format = VertexFormat.Float32x3, Offset = 0 },
-                        new VertexAttributeDescriptor { ShaderLocation = 1, Format = VertexFormat.Float32x3, Offset = (nuint)(3 * sizeof(float)) },
-                        new VertexAttributeDescriptor { ShaderLocation = 2, Format = VertexFormat.Float32x2, Offset = (nuint)(6 * sizeof(float)) },
-                    ]
-                }
-            ]
-        };
-        context.Meshes.Add(cubeMesh);
-
-        // --- BasicLit 材质管线 ---
-        var basicLitVS = context.ShaderCache.GetOrCreateShader(driver, BasicLitShaders.WGSL, "vs_main");
-        var basicLitFS = context.ShaderCache.GetOrCreateShader(driver, BasicLitShaders.WGSL, "fs_main");
-
-        // 注意：3D 渲染目标是 RGBA8Unorm（离屏纹理），不是 swapchain 格式
-        var basicLitPipelineKey = new PipelineCacheKey
-        {
-            VertexShaderSource = BasicLitShaders.WGSL,
-            VertexShaderEntryPoint = "vs_main",
-            FragmentShaderSource = BasicLitShaders.WGSL,
-            FragmentShaderEntryPoint = "fs_main",
-            Topology = DriverPrimitiveTopology.TriangleList,
-            SampleCount = 1,
-            VertexBuffers = cubeMesh.Layouts,
-            ColorTargets = [new ColorTargetDescriptor { Format = DriverPixelFormat.RGBA8Unorm }],
-            DepthStencil = new DepthStencilStateDescriptor
-            {
-                Format = DriverPixelFormat.Depth24Plus,
-                DepthCompare = DriverCompareFunction.Less,
-                DepthWriteEnabled = true,
-            }
-        };
-
-        var basicLitPipeline = context.PipelineCache.GetOrCreate(driver, basicLitPipelineKey, () => driver.CreateRenderPipelineWithDynamicUniforms(new RenderPipelineDescriptor
-        {
-            VertexShader = basicLitVS,
-            FragmentShader = basicLitFS,
-            Topology = DriverPrimitiveTopology.TriangleList,
-            ColorTargets = basicLitPipelineKey.ColorTargets,
-            VertexBuffers = cubeMesh.Layouts,
-            DepthStencil = basicLitPipelineKey.DepthStencil,
-        }, (nuint)ObjectData.Size, groupIndex: 1, bindGroupCount: 4));
-
-        var cameraBindingSet = driver.CreateBindingSetForPipeline(basicLitPipeline, 0, [new UniformBufferBinding { Buffer = scene.CameraBuffer, Binding = 0 }]);
-        var objectBindingSet = driver.CreateDynamicUniformBindingSet(basicLitPipeline, 1, scene.ObjectDataBuffer, (nuint)ObjectData.Size);
-        var lightBindingSet = driver.CreateBindingSetForPipeline(basicLitPipeline, 2, [new UniformBufferBinding { Buffer = scene.LightBuffer, Binding = 0 }]);
-
-        // Shadow resources (merged into group 3)
-        var shadowSampler = driver.CreateSampler(new SamplerDescriptor
-        {
-            MinFilter = FilterMode.Linear,
-            MagFilter = FilterMode.Linear,
-            AddressModeU = WrapMode.ClampToEdge,
-            AddressModeV = WrapMode.ClampToEdge,
-            Compare = true,
-            CompareFunction = DriverCompareFunction.Less,
-        });
-        var shadowDataBuffer = driver.CreateBuffer(new BufferDescriptor
-        {
-            Size = 256,
-            Usage = BufferUsage.Uniform | BufferUsage.CopyDst,
-        });
-        context.ShadowDataBuffer = shadowDataBuffer;
-        context.ShadowSampler = shadowSampler;
-
-        // Placeholder depth texture for shadow_map binding (must be Depth24Plus format)
-        var placeholderDepthTexture = driver.CreateTexture(new TextureDescriptor
-        {
-            Width = 1, Height = 1,
-            Format = DriverPixelFormat.Depth24Plus,
-            Usage = TextureUsage.ShaderBinding | TextureUsage.RenderAttachment,
-        });
-        var placeholderDepthView = driver.CreateTextureView(placeholderDepthTexture, new TextureViewDescriptor
-        {
-            Format = DriverPixelFormat.Depth24Plus,
-            Dimension = TextureViewDimension.View2D,
-            MipLevelCount = 1,
-        });
-
-        // Group 3: albedo_texture(0) + albedo_sampler(1) + shadow_map(2) + shadow_sampler(3) + shadow_data(4)
-        var textureBindingSet = driver.CreateBindingSetForPipeline(basicLitPipeline, 3,
-            [new UniformBufferBinding { Buffer = shadowDataBuffer, Binding = 4 }],
-            [
-                new TextureBinding { Binding = 0, TextureView = defaultTextureView },
-                new TextureBinding { Binding = 2, TextureView = placeholderDepthView },
-            ],
-            [
-                new SamplerBinding { Binding = 1, Sampler = defaultSampler },
-                new SamplerBinding { Binding = 3, Sampler = shadowSampler },
-            ]);
-
-        var basicLitMaterial = new Material
-        {
-            Pipeline = basicLitPipeline,
-            BindingSets = [cameraBindingSet, objectBindingSet, lightBindingSet, textureBindingSet],
-            AlbedoTexture = defaultTexture,
-            AlbedoSampler = defaultSampler,
-        };
-        context.Materials.Add(basicLitMaterial);
-
-        // --- 精灵管线 ---
-        var spriteVS = context.ShaderCache.GetOrCreateShader(driver, SpriteShaders.WGSL, "vs_main");
-        var spriteFS = context.ShaderCache.GetOrCreateShader(driver, SpriteShaders.WGSL, "fs_main");
-
-        const int UniformStructSize = 144;
-        const int UniformAlign = 256;
-        const int MaxSprites = 64;
-        const int UniformBufferSize = UniformAlign * MaxSprites;
-        var swapchainFormat = driver.SwapchainFormat;
-
-        var spritePipelineKey = new PipelineCacheKey
-        {
-            VertexShaderSource = SpriteShaders.WGSL,
-            VertexShaderEntryPoint = "vs_main",
-            FragmentShaderSource = SpriteShaders.WGSL,
-            FragmentShaderEntryPoint = "fs_main",
-            Topology = DriverPrimitiveTopology.TriangleList,
-            SampleCount = 1,
-            VertexBuffers =
-            [
-                new VertexBufferLayout
-                {
-                    ArrayStride = 2 * sizeof(float),
-                    Attributes = [new VertexAttributeDescriptor { ShaderLocation = 0, Format = VertexFormat.Float32x2, Offset = 0 }]
-                }
-            ],
-            ColorTargets =
-            [
-                new ColorTargetDescriptor
-                {
-                    Format = swapchainFormat,
-                    Blend = new BlendStateDescriptor
-                    {
-                        Color = new BlendComponentDescriptor
-                        {
-                            SrcFactor = DriverBlendFactor.SrcAlpha,
-                            DstFactor = DriverBlendFactor.OneMinusSrcAlpha,
-                        },
-                        Alpha = new BlendComponentDescriptor
-                        {
-                            SrcFactor = DriverBlendFactor.One,
-                            DstFactor = DriverBlendFactor.OneMinusSrcAlpha,
-                        }
-                    }
-                }
-            ],
-            DepthStencil = null,
-        };
-
-        context.SpritePipeline = context.PipelineCache.GetOrCreate(driver, spritePipelineKey, () => driver.CreateRenderPipelineWithDynamicUniforms(new RenderPipelineDescriptor
-        {
-            VertexShader = spriteVS,
-            FragmentShader = spriteFS,
-            Topology = DriverPrimitiveTopology.TriangleList,
-            ColorTargets = spritePipelineKey.ColorTargets,
-            VertexBuffers = spritePipelineKey.VertexBuffers,
-        }, (nuint)UniformStructSize, groupIndex: 0, bindGroupCount: 1));
-
-        float[] quadVertices = [-0.5f, 0.5f, 0.5f, 0.5f, -0.5f, -0.5f, 0.5f, -0.5f];
-        uint[] quadIndices = [0u, 1, 2, 2, 1, 3];
-
-        context.QuadVertexBuffer = driver.CreateBuffer(new BufferDescriptor
-        {
-            Size = (nuint)(quadVertices.Length * sizeof(float)),
-            Usage = BufferUsage.Vertex | BufferUsage.CopyDst,
-        });
-        context.QuadVertexBuffer.UploadData<float>(quadVertices);
-        context.QuadIndexBuffer = driver.CreateBuffer(new BufferDescriptor
-        {
-            Size = (nuint)(quadIndices.Length * sizeof(uint)),
-            Usage = BufferUsage.Index | BufferUsage.CopyDst,
-        });
-        context.QuadIndexBuffer.UploadData<uint>(quadIndices);
-        context.UniformBuffer = driver.CreateBuffer(new BufferDescriptor
-        {
-            Size = (nuint)UniformBufferSize,
-            Usage = BufferUsage.Uniform | BufferUsage.CopyDst,
-        });
-        context.BindingSet = driver.CreateDynamicUniformBindingSet(
-            context.SpritePipeline, 0, context.UniformBuffer, UniformStructSize);
-    }
-
-    // ── Sprite 着色器 ────────────────────────────────────────────────────────
-    internal static class SpriteShaders
-    {
-        public const string WGSL = """
-            struct Uniforms {
-                model: mat4x4<f32>,
-                projection: mat4x4<f32>,
-                color: vec4<f32>,
-            };
-
-            @group(0) @binding(0) var<uniform> uniforms: Uniforms;
-
-            struct VertexOutput {
-                @builtin(position) clip_position: vec4<f32>,
-                @location(0) color: vec4<f32>,
-            };
-
-            @vertex
-            fn vs_main(@location(0) position: vec2<f32>) -> VertexOutput {
-                var out: VertexOutput;
-                out.clip_position = uniforms.projection * uniforms.model * vec4<f32>(position, 0.0, 1.0);
-                out.color = uniforms.color;
-                return out;
-            }
-
-            @fragment
-            fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-                return in.color;
-            }
-            """;
-    }
-
     // ── 截图保存为 PNG ────────────────────────────────────────────────────────
     private static void SaveScreenshot(int width, int height, uint alignedBytesPerRow, byte[] pixelData)
     {
@@ -1430,74 +1053,6 @@ public sealed class RenderDemoPlugin : IKiloPlugin
 
         image.SaveAsPng(filename);
         Console.WriteLine($"[Screenshot] Saved: {filename} ({width}x{height}, blur={BlurRenderSystem.BlurEnabled})");
-    }
-
-    private static void ComputeLocalToWorld(KiloWorld world)
-    {
-        // Pass 1: Process root entities (no Parent) first.
-        // This ensures parent world matrices are up-to-date before children read them.
-        var rootQuery = world.QueryBuilder()
-            .With<LocalTransform>()
-            .With<LocalToWorld>()
-            .Without<Parent>()
-            .Build();
-
-        var rootIter = rootQuery.Iter();
-        while (rootIter.Next())
-        {
-            var transforms = rootIter.Data<LocalTransform>(rootIter.GetColumnIndexOf<LocalTransform>());
-            var worlds = rootIter.Data<LocalToWorld>(rootIter.GetColumnIndexOf<LocalToWorld>());
-
-            for (int i = 0; i < rootIter.Count; i++)
-            {
-                ref readonly var t = ref transforms[i];
-                worlds[i].Value =
-                    Matrix4x4.CreateScale(t.Scale)
-                    * Matrix4x4.CreateFromQuaternion(t.Rotation)
-                    * Matrix4x4.CreateTranslation(t.Position);
-            }
-        }
-
-        // Pass 2: Process child entities (with Parent).
-        // Run multiple sub-passes to handle deep hierarchies correctly.
-        const int maxPasses = 8;
-        var childQuery = world.QueryBuilder()
-            .With<LocalTransform>()
-            .With<LocalToWorld>()
-            .With<Parent>()
-            .Build();
-
-        for (int pass = 0; pass < maxPasses; pass++)
-        {
-            var childIter = childQuery.Iter();
-            while (childIter.Next())
-            {
-                var transforms = childIter.Data<LocalTransform>(childIter.GetColumnIndexOf<LocalTransform>());
-                var worlds = childIter.Data<LocalToWorld>(childIter.GetColumnIndexOf<LocalToWorld>());
-                var entities = childIter.Entities();
-
-                for (int i = 0; i < childIter.Count; i++)
-                {
-                    ref readonly var t = ref transforms[i];
-                    var localMatrix =
-                        Matrix4x4.CreateScale(t.Scale)
-                        * Matrix4x4.CreateFromQuaternion(t.Rotation)
-                        * Matrix4x4.CreateTranslation(t.Position);
-
-                    var entityId = new EntityId(entities[i].ID);
-                    var parentId = new EntityId(world.Get<Parent>(entityId).Id);
-                    if (world.Exists(parentId) && world.Has<LocalToWorld>(parentId))
-                    {
-                        ref readonly var parentWorld = ref world.Get<LocalToWorld>(parentId);
-                        worlds[i].Value = localMatrix * parentWorld.Value;
-                    }
-                    else
-                    {
-                        worlds[i].Value = localMatrix;
-                    }
-                }
-            }
-        }
     }
 }
 
@@ -1582,7 +1137,7 @@ public sealed class BlurRenderSystem
             {
                 Width = ws.Width,
                 Height = ws.Height,
-                Format = DriverPixelFormat.RGBA8Unorm,
+                Format = driver.SwapchainFormat,
                 Usage = TextureUsage.RenderAttachment | TextureUsage.ShaderBinding | TextureUsage.CopySrc,
             });
             pass.WriteTexture(offscreenColor);

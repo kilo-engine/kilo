@@ -138,17 +138,14 @@ kilo/
 ├── Kilo.slnx
 ├── Directory.Build.props
 ├── src/
-│   └── Kilo.ECS/           # Anti-corruption layer
-│       ├── Primitives/     # EntityId, Ptr<T>, ComponentInfo
-│       ├── World/          # KiloWorld, KiloEntity
-│       ├── Query/          # KiloQueryBuilder, KiloQuery, KiloQueryIterator
-│       ├── App/            # KiloApp, KiloStage, IKiloPlugin, ThreadingMode
-│       ├── SystemParams/   # Future: Commands, Res, ResMut, etc.
-│       ├── Observers/      # Trigger interfaces
-│       ├── State/          # State<T>, NextState<T>
-│       └── Bundles/        # IKiloBundle
+│   ├── Kilo.ECS/           # Anti-corruption layer
+│   ├── Kilo.Rendering/     # WebGPU rendering pipeline
+│   ├── Kilo.Physics/       # BepuPhysics integration
+│   ├── Kilo.Input/         # Input handling
+│   └── Kilo.Assets/        # Asset loading (GLTF, textures, etc.)
 ├── tests/
 │   └── Kilo.ECS.Tests/    # xUnit tests
+├── docs/                   # Documentation & roadmaps
 ├── samples/
 │   └── Kilo.Samples.HelloECS/
 └── README.md
@@ -156,7 +153,7 @@ kilo/
 
 ## Roadmap
 
-### Phase 1 (Current): ECS Anti-Corruption Layer
+### Phase 1: ECS Anti-Corruption Layer ✅
 - [x] Core ECS wrapping (KiloWorld, KiloEntity, EntityId)
 - [x] Query system (KiloQueryBuilder, KiloQuery)
 - [x] App framework (KiloApp, KiloStage, IKiloPlugin)
@@ -165,21 +162,24 @@ kilo/
 - [x] Unit tests
 - [x] HelloECS sample
 
-### Phase 2: Documentation & Research
-- [ ] Veldrid rendering guide (comprehensive)
-- [ ] BepuPhysics guide (comprehensive)
-- [ ] Plugin selection reports (audio, input, assets)
-- [ ] Editor architecture analysis report (including R3 ViewModel evaluation)
+### Phase 2: Documentation & Research ✅
+- [x] Veldrid rendering guide (comprehensive)
+- [x] BepuPhysics guide (comprehensive)
+- [x] Plugin selection reports (audio, input, assets)
+- [x] Editor architecture analysis report (including R3 ViewModel evaluation)
 
-### Phase 3: Plugin Development
-- [ ] Kilo.Rendering (Veldrid)
-- [ ] Kilo.Physics (BepuPhysics)
-- [ ] Kilo.Input
-- [ ] Kilo.Assets
+### Phase 3: Plugin Development (In Progress)
+- [x] Kilo.Rendering (WebGPU)
+- [x] Kilo.Physics (BepuPhysics)
+- [x] Kilo.Input
+- [x] Kilo.Assets
 
 ### Phase 4: Engine MVP
 - [ ] Working game combining all plugins
 - [ ] Performance benchmarks
+
+### Module Roadmaps
+- [Rendering](docs/roadmap-rendering.md)
 
 ### Future Directions
 - [ ] Full system parameter injection (T4-generated AddSystem overloads)
