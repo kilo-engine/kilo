@@ -54,8 +54,9 @@ public sealed class SkinnedMeshPrepareSystem
                         jointWorldMatrix = jointLTW.Value;
                     }
 
-                    // Final joint matrix = jointWorld * inverseBindMatrix
-                    jointMatrices[j] = jointWorldMatrix * skeleton.Data.Joints[j].InverseBindMatrix;
+                    // Final joint matrix = AncestorCorrection * jointWorld * inverseBindMatrix
+                    // AncestorCorrection accounts for non-joint ancestor transforms (e.g., "Armature" node)
+                    jointMatrices[j] = skeleton.Data.Joints[j].InverseBindMatrix * jointWorldMatrix * skeleton.Data.AncestorCorrection;
                 }
 
                 // Upload to GPU

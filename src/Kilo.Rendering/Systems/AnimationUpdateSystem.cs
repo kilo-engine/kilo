@@ -61,9 +61,19 @@ public sealed class AnimationUpdateSystem
                 // Sample the clip at current time
                 var samples = clip.Sample(player.Time);
 
-                // Apply transforms to joint entities
-                for (int j = 0; j < samples.Length && j < skeleton.JointEntities.Length; j++)
+                // Build set of joints that have animation data in this clip
+                var animatedJoints = new HashSet<int>();
+                foreach (var ch in clip.Channels)
+                    animatedJoints.Add(ch.JointIndex);
+
+                // Apply transforms only to joints that have animation data.
+                // Non-animated joints keep their rest pose.
+                for (int j = 0; j < skeleton.JointEntities.Length; j++)
                 {
+                    // Skip joints without animation channels — preserve rest pose
+                    if (!animatedJoints.Contains(j)) continue;
+                    if (j >= samples.Length) continue;
+
                     var jointId = new EntityId((ulong)skeleton.JointEntities[j]);
                     if (!world.Exists(jointId) || !world.Has<LocalTransform>(jointId)) continue;
 

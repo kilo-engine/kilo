@@ -17,6 +17,7 @@ public sealed class RenderPassExecutionContext
     }
 
     public ITexture GetTexture(RenderResourceHandle handle) => _graph.GetResolvedTexture(handle);
+    public ITexture GetTexture(string importedName) => _graph.GetResolvedTextureByName(importedName);
     public IBuffer GetBuffer(RenderResourceHandle handle) => _graph.GetResolvedBuffer(handle);
     public ITextureView GetTextureView(RenderResourceHandle handle)
     {

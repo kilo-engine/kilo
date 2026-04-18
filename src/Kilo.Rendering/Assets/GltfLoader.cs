@@ -39,6 +39,10 @@ public sealed class GltfModel
     public List<AnimationClip> Animations { get; set; } = [];
     public int[]? JointEntityIds { get; set; }
     public bool IsSkinned { get; set; }
+
+    /// <summary>Axis-aligned bounding box of the model in local space.</summary>
+    public Vector3 BBoxMin = new(float.MaxValue);
+    public Vector3 BBoxMax = new(float.MinValue);
 }
 
 /// <summary>
@@ -85,34 +89,59 @@ public static class GltfLoader
         // Load all animations
         result.Animations = LoadAnimations(model, result.Skeleton);
 
+        // First pass: detect if any primitive has skinning
+        bool anySkinned = false;
+        foreach (var node in allNodes)
+        {
+            if (node.Mesh == null) continue;
+            foreach (var primitive in node.Mesh.Primitives)
+            {
+                var ja = primitive.GetVertexAccessor("JOINTS_0");
+                var wa = primitive.GetVertexAccessor("WEIGHTS_0");
+                if (ja != null && wa != null)
+                {
+                    anySkinned = true;
+                    break;
+                }
+            }
+            if (anySkinned) break;
+        }
+        result.IsSkinned = anySkinned;
+
         foreach (var node in allNodes)
         {
             if (node.Mesh == null) continue;
 
             foreach (var primitive in node.Mesh.Primitives)
             {
-                var (meshHandle, materialHandle, isSkinned) = LoadPrimitive(primitive, driver, context, scene);
+                var (meshHandle, materialHandle) = LoadPrimitive(primitive, driver, context, scene, result);
                 result.Primitives.Add((meshHandle, materialHandle));
-                if (isSkinned)
-                {
-                    result.IsSkinned = true;
-                }
             }
         }
 
+        Console.WriteLine($"[GltfLoader] Loaded {result.Primitives.Count} primitives, Skinned={result.IsSkinned}");
         return result;
     }
 
-    private static (int meshHandle, int materialHandle, bool isSkinned) LoadPrimitive(
+    private static (int meshHandle, int materialHandle) LoadPrimitive(
         SharpGLTF.Schema2.MeshPrimitive primitive,
         IRenderDriver driver,
         RenderContext context,
-        GpuSceneData scene)
+        GpuSceneData scene,
+        GltfModel result)
     {
         // Vertex data
         var posAccessor = primitive.GetVertexAccessor("POSITION");
         var positions = posAccessor.AsVector3Array();
         int vertexCount = positions.Count;
+
+        // Update bounding box
+        for (int i = 0; i < vertexCount; i++)
+        {
+            var p = positions[i];
+            result.BBoxMin = Vector3.Min(result.BBoxMin, p);
+            result.BBoxMax = Vector3.Max(result.BBoxMax, p);
+        }
 
         var normAccessor = primitive.GetVertexAccessor("NORMAL");
         var normals = normAccessor?.AsVector3Array();
@@ -132,14 +161,18 @@ public static class GltfLoader
         var weightsAccessor = primitive.GetVertexAccessor("WEIGHTS_0");
         bool hasSkinning = jointsAccessor != null && weightsAccessor != null;
 
+        // If the model is skinned but this primitive lacks skinning data,
+        // we must still output 64-byte vertices (pad with dummy joints/weights)
+        bool needsSkinningFormat = hasSkinning || result.IsSkinned;
+
         byte[] vertexData;
 
         if (hasSkinning)
         {
             // Skinned vertex format: pos(12) + normal(12) + uv(8) + joints(16) + weights(16) = 64 bytes
             vertexData = new byte[vertexCount * SkinnedMesh.BytesPerVertex];
-            var joints = jointsAccessor.AsVector4Array();
-            var weights = weightsAccessor.AsVector4Array();
+            var joints = jointsAccessor!.AsVector4Array();
+            var weights = weightsAccessor!.AsVector4Array();
 
             for (int i = 0; i < vertexCount; i++)
             {
@@ -161,11 +194,11 @@ public static class GltfLoader
                     System.Buffer.BlockCopy(new[] { n.X, n.Y, n.Z }, 0, vertexData, off + 12, 12);
                 }
 
-                // UV (2 floats, 8 bytes)
+                // UV (2 floats, 8 bytes) — glTF UV origin is top-left, same as WebGPU
                 if (uvs != null && i < uvs.Count)
                 {
                     var uv = uvs[i];
-                    System.Buffer.BlockCopy(new[] { uv.X, 1.0f - uv.Y }, 0, vertexData, off + 24, 8);
+                    System.Buffer.BlockCopy(new[] { uv.X, uv.Y }, 0, vertexData, off + 24, 8);
                 }
 
                 // Joints (4 uints, 16 bytes)
@@ -184,6 +217,47 @@ public static class GltfLoader
                     System.Buffer.BlockCopy(new[] { w.X, w.Y, w.Z, w.W }, 0, vertexData, off + 48, 16);
                 }
             }
+
+            Console.WriteLine($"[GltfLoader] Skinned primitive: {vertexCount} verts, joints accessor count={joints.Count}");
+        }
+        else if (needsSkinningFormat)
+        {
+            // Static primitive in a skinned model: use 64-byte format with dummy joints/weights
+            vertexData = new byte[vertexCount * SkinnedMesh.BytesPerVertex];
+
+            for (int i = 0; i < vertexCount; i++)
+            {
+                int off = i * SkinnedMesh.BytesPerVertex;
+
+                // Position (3 floats, 12 bytes)
+                var p = positions[i];
+                System.Buffer.BlockCopy(new[] { p.X, p.Y, p.Z }, 0, vertexData, off, 12);
+
+                // Normal (3 floats, 12 bytes)
+                if (normals != null && i < normals.Count)
+                {
+                    var n = normals[i];
+                    System.Buffer.BlockCopy(new[] { n.X, n.Y, n.Z }, 0, vertexData, off + 12, 12);
+                }
+                else if (generatedNormals != null)
+                {
+                    var n = generatedNormals[i];
+                    System.Buffer.BlockCopy(new[] { n.X, n.Y, n.Z }, 0, vertexData, off + 12, 12);
+                }
+
+                // UV (2 floats, 8 bytes) — glTF UV origin is top-left, same as WebGPU
+                if (uvs != null && i < uvs.Count)
+                {
+                    var uv = uvs[i];
+                    System.Buffer.BlockCopy(new[] { uv.X, uv.Y }, 0, vertexData, off + 24, 8);
+                }
+
+                // Dummy joints (4 uints = 0,0,0,0) — bytes 32-47 already zero
+                // Dummy weights (1,0,0,0) — full weight to joint 0
+                System.Buffer.BlockCopy(new[] { 1f, 0f, 0f, 0f }, 0, vertexData, off + 48, 16);
+            }
+
+            Console.WriteLine($"[GltfLoader] Static-in-skinned primitive: {vertexCount} verts (padded to 64-byte)");
         }
         else
         {
@@ -218,7 +292,7 @@ public static class GltfLoader
                 {
                     var uv = uvs[i];
                     vertices[off + 6] = uv.X;
-                    vertices[off + 7] = 1.0f - uv.Y; // Flip Y for WebGPU
+                    vertices[off + 7] = uv.Y;
                 }
             }
 
@@ -262,7 +336,7 @@ public static class GltfLoader
             VertexBuffer = vb,
             IndexBuffer = ib,
             IndexCount = (uint)indexData.Length,
-            Layouts = [hasSkinning ? SkinnedMesh.Layout : new VertexBufferLayout
+            Layouts = [needsSkinningFormat ? SkinnedMesh.Layout : new VertexBufferLayout
             {
                 ArrayStride = 32,
                 Attributes =
@@ -313,7 +387,7 @@ public static class GltfLoader
 
         int materialHandle = context.MaterialManager.CreateMaterial(context, scene, matDescriptor);
 
-        return (meshHandle, materialHandle, hasSkinning);
+        return (meshHandle, materialHandle);
     }
 
     /// <summary>
@@ -349,12 +423,17 @@ public static class GltfLoader
         for (int i = 0; i < jointCount; i++)
         {
             var jointNode = joints[i];
+            // Read rest pose local transform from the GLTF node
+            var localTf = jointNode.LocalTransform;
             var jointInfo = new JointInfo
             {
                 Name = jointNode.Name ?? $"Joint_{i}",
                 InverseBindMatrix = inverseBindMatrices != null && i < inverseBindMatrices.Length
                     ? inverseBindMatrices[i]
-                    : Matrix4x4.Identity
+                    : Matrix4x4.Identity,
+                RestPosition = localTf.Translation,
+                RestRotation = localTf.Rotation,
+                RestScale = localTf.Scale,
             };
 
             // Find parent joint
@@ -370,6 +449,36 @@ public static class GltfLoader
             }
 
             skeletonData.Joints[i] = jointInfo;
+        }
+
+        // Compute ancestor correction: world transform of non-joint nodes above root joints.
+        for (int i = 0; i < jointCount; i++)
+        {
+            if (skeletonData.Joints[i].ParentIndex != -1) continue;
+            var node = joints[i].VisualParent;
+            var ancestorChain = Matrix4x4.Identity;
+            while (node != null)
+            {
+                if (!nodeToJointIndex.ContainsKey(node.LogicalIndex))
+                {
+                    var local = Matrix4x4.CreateScale(node.LocalTransform.Scale)
+                        * Matrix4x4.CreateFromQuaternion(node.LocalTransform.Rotation)
+                        * Matrix4x4.CreateTranslation(node.LocalTransform.Translation);
+                    ancestorChain = ancestorChain * local;
+                    Console.WriteLine($"[GltfLoader] Ancestor: {node.Name} T={node.LocalTransform.Translation} S={node.LocalTransform.Scale}");
+                }
+                node = node.VisualParent;
+            }
+            skeletonData.AncestorCorrection = ancestorChain;
+            break;
+        }
+
+        // Diagnostic: print joint hierarchy
+        Console.WriteLine($"[GltfLoader] Skeleton: {jointCount} joints, AncestorCorrection={skeletonData.AncestorCorrection == Matrix4x4.Identity}");
+        for (int i = 0; i < Math.Min(jointCount, 10); i++)
+        {
+            var j = skeletonData.Joints[i];
+            Console.WriteLine($"  Joint {i}: {j.Name} parent={j.ParentIndex} pos=({j.RestPosition.X:F2},{j.RestPosition.Y:F2},{j.RestPosition.Z:F2})");
         }
 
         return skeletonData;

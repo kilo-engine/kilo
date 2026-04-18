@@ -22,4 +22,12 @@ public sealed class RenderContext
 
     public List<Mesh> Meshes { get; set; } = [];
     public List<Material> Materials { get; set; } = [];
+
+    // Screenshot support
+    public bool ScreenshotRequested { get; set; }
+    public bool HasPendingScreenshot { get; set; }
+    public IBuffer? ScreenshotBuffer { get; set; }
+    public uint ScreenshotAlignedBytesPerRow { get; set; }
+    public int ScreenshotWidth { get; set; }
+    public int ScreenshotHeight { get; set; }
 }

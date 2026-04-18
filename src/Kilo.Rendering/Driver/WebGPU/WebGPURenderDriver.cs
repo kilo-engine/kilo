@@ -870,7 +870,7 @@ public sealed unsafe class WebGPURenderDriver : IRenderDriver
     {
         _surfaceConfig = new SurfaceConfiguration
         {
-            Usage = Silk.NET.WebGPU.TextureUsage.RenderAttachment,
+            Usage = Silk.NET.WebGPU.TextureUsage.RenderAttachment | Silk.NET.WebGPU.TextureUsage.CopySrc,
             Format = _swapchainFormat,
             PresentMode = PresentMode.Fifo,
             Device = Device,

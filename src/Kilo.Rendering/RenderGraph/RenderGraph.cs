@@ -59,6 +59,13 @@ public sealed class RenderGraph : IDisposable
     internal IBuffer GetResolvedBuffer(RenderResourceHandle handle)
         => (IBuffer)_resolvedResources[handle.Id];
 
+    internal ITexture GetResolvedTextureByName(string name)
+    {
+        if (_importedResources.TryGetValue(name, out var handle))
+            return (ITexture)_resolvedResources[handle.Id];
+        throw new InvalidOperationException($"Imported resource '{name}' not found.");
+    }
+
     internal ITextureView GetOrCreateTextureView(IRenderDriver driver, RenderResourceHandle handle, ITexture texture)
     {
         if (_textureViews.TryGetValue(handle.Id, out var view))

@@ -7,7 +7,54 @@ public sealed class EndFrameSystem
     public void Update(KiloWorld world)
     {
         var context = world.GetResource<RenderContext>();
-        context.RenderGraph.Execute(context.Driver);
-        context.Driver.Present();
+        var driver = context.Driver;
+        var graph = context.RenderGraph;
+
+        // Add screenshot copy pass as the very last pass (after sprites/text)
+        if (context.ScreenshotRequested)
+        {
+            var ws = world.GetResource<WindowSize>();
+            var width = ws.Width;
+            var height = ws.Height;
+            // BGRA format: 4 bytes per pixel
+            var alignedBytesPerRow = (uint)(((width * 4) + 255) & ~255);
+            var requiredSize = (nuint)(alignedBytesPerRow * height);
+
+            var screenshotBuffer = driver.CreateBuffer(new RenderGraph.BufferDescriptor
+            {
+                Size = requiredSize,
+                Usage = RenderGraph.BufferUsage.CopyDst | RenderGraph.BufferUsage.MapRead,
+            });
+
+            graph.AddPass("ScreenshotCopy", setup: pass =>
+            {
+                var backbuffer = pass.ImportTexture("Backbuffer", new RenderGraph.TextureDescriptor
+                {
+                    Width = width,
+                    Height = height,
+                    Format = driver.SwapchainFormat,
+                    Usage = RenderGraph.TextureUsage.RenderAttachment | RenderGraph.TextureUsage.CopySrc,
+                });
+                pass.ReadTexture(backbuffer);
+            }, execute: ctx =>
+            {
+                var backbufferTexture = ctx.GetTexture("Backbuffer");
+                ctx.Encoder.CopyTextureToBuffer(backbufferTexture, new Driver.TextureCopyRegion
+                {
+                    Width = backbufferTexture.Width,
+                    Height = backbufferTexture.Height,
+                }, screenshotBuffer, 0);
+            });
+
+            context.ScreenshotRequested = false;
+            context.HasPendingScreenshot = true;
+            context.ScreenshotBuffer = screenshotBuffer;
+            context.ScreenshotAlignedBytesPerRow = alignedBytesPerRow;
+            context.ScreenshotWidth = width;
+            context.ScreenshotHeight = height;
+        }
+
+        graph.Execute(driver);
+        driver.Present();
     }
 }

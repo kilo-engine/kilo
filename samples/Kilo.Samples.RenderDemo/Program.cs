@@ -434,7 +434,7 @@ app.AddSystem(KiloStage.Update, world =>
     // ── P 键截图 ─────────────────────────────────────────────────────────
     if (input.IsKeyPressed((int)Key.P))
     {
-        BlurRenderSystem.ScreenshotRequested = true;
+        world.GetResource<RenderContext>().ScreenshotRequested = true;
         Console.WriteLine("[RenderDemo] Screenshot requested (P key)");
     }
 
@@ -728,22 +728,14 @@ public sealed class RenderDemoPlugin : IKiloPlugin
         KiloWorld world, GltfModel gltfModel,
         IRenderDriver driver, RenderContext context, GpuSceneData scene)
     {
-        // Calculate model bounding box from mesh data for auto-scaling
-        float maxExtent = 0f;
-        foreach (var (meshHandle, _) in gltfModel.Primitives)
-        {
-            if (meshHandle >= 0 && meshHandle < context.Meshes.Count)
-            {
-                var vb = context.Meshes[meshHandle].VertexBuffer;
-                maxExtent = Math.Max(maxExtent, (float)vb.Size);
-            }
-        }
+        // Compute model scale from actual bounding box
+        var extent = gltfModel.BBoxMax - gltfModel.BBoxMin;
+        float maxExtent = Math.Max(Math.Max(extent.X, extent.Y), extent.Z);
+        float modelScale = maxExtent > 0 ? 3.0f / maxExtent : 1f; // Fit model in ~3 units
+        var center = (gltfModel.BBoxMin + gltfModel.BBoxMax) * 0.5f;
+        var entityPosition = new Vector3(-center.X * modelScale, -gltfModel.BBoxMin.Y * modelScale + 0.5f, -center.Z * modelScale);
 
-        // Compute a scale factor to fit the model in ~3 unit height for the camera view
-        // We don't have vertex data on CPU anymore, so use a heuristic based on mesh buffer size
-        // Fox.glb: 1728 verts * 64 bytes = 110592 bytes, ~79 units tall
-        float modelScale = 1f / 40f; // Shrink to fit camera view
-        var entityPosition = new Vector3(0, -1, 0);
+        Console.WriteLine($"[Kilo] Model BBox: [{gltfModel.BBoxMin.X:F1},{gltfModel.BBoxMin.Y:F1},{gltfModel.BBoxMin.Z:F1}] to [{gltfModel.BBoxMax.X:F1},{gltfModel.BBoxMax.Y:F1},{gltfModel.BBoxMax.Z:F1}], scale={modelScale:F4}");
 
         if (!gltfModel.IsSkinned || gltfModel.Skeleton == null)
         {
@@ -774,9 +766,9 @@ public sealed class RenderDemoPlugin : IKiloPlugin
             var jointEntity = world.Entity($"GltfJoint_{joint.Name}")
                 .Set(new LocalTransform
                 {
-                    Position = Vector3.Zero,
-                    Rotation = Quaternion.Identity,
-                    Scale = Vector3.One
+                    Position = joint.RestPosition,
+                    Rotation = joint.RestRotation,
+                    Scale = joint.RestScale
                 })
                 .Set(new LocalToWorld());
 
@@ -857,7 +849,7 @@ public sealed class RenderDemoPlugin : IKiloPlugin
             .Set(new LocalTransform
             {
                 Position = entityPosition,
-                Rotation = Quaternion.CreateFromAxisAngle(Vector3.UnitY, MathF.PI),
+                Rotation = Quaternion.Identity,
                 Scale = new Vector3(modelScale)
             })
             .Set(new LocalToWorld())
@@ -935,13 +927,14 @@ public sealed class RenderDemoPlugin : IKiloPlugin
         int skinnedMatHandle = context.Materials.Count;
         context.Materials.Add(skinnedMaterial);
 
-        // Additional primitives as separate entities sharing the skeleton
+        // Additional primitives as children of the main entity so they share the model transform
         for (int p = 0; p < gltfModel.Primitives.Count; p++)
         {
             var (meshH, _) = gltfModel.Primitives[p];
             var targetEntity = p == 0 ? gltfEntity : world.Entity($"GltfSkinnedPart_{p}")
                 .Set(new LocalTransform { Position = Vector3.Zero, Rotation = Quaternion.Identity, Scale = Vector3.One })
-                .Set(new LocalToWorld());
+                .Set(new LocalToWorld())
+                .Set(new Parent { Id = new EntityId(gltfEntity.Id.Value) });
 
             targetEntity.Set(new SkinnedMeshRenderer
             {
@@ -982,21 +975,30 @@ public sealed class RenderDemoPlugin : IKiloPlugin
             Console.WriteLine("[Kilo] WebGPU initialized. WASD=Move, QE=Up/Down, B=Toggle Blur, P=Screenshot, N=Play/Pause, M=Toggle Loop, G=Switch Animation");
         };
 
+        var _frameCount = 0;
         window.Render += _ =>
         {
             app.Update();
+            _frameCount++;
+
+            // Auto-screenshot after 30 frames (skip first frames for initialization)
+            if (_frameCount == 30)
+            {
+                context.ScreenshotRequested = true;
+                Console.WriteLine($"[Kilo] Auto-screenshot at frame {_frameCount}");
+            }
 
             // Process screenshot readback after render graph execution
-            if (BlurRenderSystem.HasPendingScreenshot && BlurRenderSystem.ScreenshotBuffer != null)
+            if (context.HasPendingScreenshot && context.ScreenshotBuffer != null)
             {
-                BlurRenderSystem.HasPendingScreenshot = false;
+                context.HasPendingScreenshot = false;
                 var driver = context.Driver;
-                var width = BlurRenderSystem.PendingScreenshotWidth;
-                var height = BlurRenderSystem.PendingScreenshotHeight;
-                var alignedBytesPerRow = BlurRenderSystem.ScreenshotAlignedBytesPerRow;
+                var width = context.ScreenshotWidth;
+                var height = context.ScreenshotHeight;
+                var alignedBytesPerRow = context.ScreenshotAlignedBytesPerRow;
                 var requiredSize = (nuint)(alignedBytesPerRow * height);
-                var pixelData = driver.ReadBufferSync(BlurRenderSystem.ScreenshotBuffer, 0, requiredSize);
-                BlurRenderSystem.ScreenshotBuffer = null;
+                var pixelData = driver.ReadBufferSync(context.ScreenshotBuffer, 0, requiredSize);
+                context.ScreenshotBuffer = null;
                 SaveScreenshot(width, height, alignedBytesPerRow, pixelData);
             }
         };
@@ -1409,21 +1411,19 @@ public sealed class RenderDemoPlugin : IKiloPlugin
 
         using var image = new Image<Rgba32>(width, height);
 
-        // Copy pixel data from aligned buffer rows to the image
-        // Source texture is RGBA8Unorm (offscreen) — 4 bytes per pixel
-        // Flip vertically: GPU textures are top-down, image coordinates are bottom-up
+        // Source is the swapchain backbuffer (BGRA8UnormSrgb) — layout is B,G,R,A
+        // WebGPU textures are top-down, matching PNG coordinate convention — no Y-flip needed
         for (int y = 0; y < height; y++)
         {
             var srcRow = y * alignedBytesPerRow;
-            var dstY = height - 1 - y;
             for (int x = 0; x < width; x++)
             {
                 var pixelOffset = (int)(srcRow + x * 4);
-                image[x, dstY] = new Rgba32(
-                    pixelData[pixelOffset],     // R
-                    pixelData[pixelOffset + 1], // G
-                    pixelData[pixelOffset + 2], // B
-                    pixelData[pixelOffset + 3]  // A
+                image[x, y] = new Rgba32(
+                    pixelData[pixelOffset + 2], // R (from BGRA[2])
+                    pixelData[pixelOffset + 1], // G (from BGRA[1])
+                    pixelData[pixelOffset],     // B (from BGRA[0])
+                    pixelData[pixelOffset + 3]  // A (from BGRA[3])
                 );
             }
         }
@@ -1434,39 +1434,68 @@ public sealed class RenderDemoPlugin : IKiloPlugin
 
     private static void ComputeLocalToWorld(KiloWorld world)
     {
-        var query = world.QueryBuilder()
+        // Pass 1: Process root entities (no Parent) first.
+        // This ensures parent world matrices are up-to-date before children read them.
+        var rootQuery = world.QueryBuilder()
             .With<LocalTransform>()
             .With<LocalToWorld>()
+            .Without<Parent>()
             .Build();
 
-        var iter = query.Iter();
-        while (iter.Next())
+        var rootIter = rootQuery.Iter();
+        while (rootIter.Next())
         {
-            var transforms = iter.Data<LocalTransform>(iter.GetColumnIndexOf<LocalTransform>());
-            var worlds = iter.Data<LocalToWorld>(iter.GetColumnIndexOf<LocalToWorld>());
-            var entities = iter.Entities();
+            var transforms = rootIter.Data<LocalTransform>(rootIter.GetColumnIndexOf<LocalTransform>());
+            var worlds = rootIter.Data<LocalToWorld>(rootIter.GetColumnIndexOf<LocalToWorld>());
 
-            for (int i = 0; i < iter.Count; i++)
+            for (int i = 0; i < rootIter.Count; i++)
             {
                 ref readonly var t = ref transforms[i];
-                var localMatrix =
+                worlds[i].Value =
                     Matrix4x4.CreateScale(t.Scale)
                     * Matrix4x4.CreateFromQuaternion(t.Rotation)
                     * Matrix4x4.CreateTranslation(t.Position);
+            }
+        }
 
-                var entityId = new EntityId(entities[i].ID);
-                if (world.Has<Parent>(entityId))
+        // Pass 2: Process child entities (with Parent).
+        // Run multiple sub-passes to handle deep hierarchies correctly.
+        const int maxPasses = 8;
+        var childQuery = world.QueryBuilder()
+            .With<LocalTransform>()
+            .With<LocalToWorld>()
+            .With<Parent>()
+            .Build();
+
+        for (int pass = 0; pass < maxPasses; pass++)
+        {
+            var childIter = childQuery.Iter();
+            while (childIter.Next())
+            {
+                var transforms = childIter.Data<LocalTransform>(childIter.GetColumnIndexOf<LocalTransform>());
+                var worlds = childIter.Data<LocalToWorld>(childIter.GetColumnIndexOf<LocalToWorld>());
+                var entities = childIter.Entities();
+
+                for (int i = 0; i < childIter.Count; i++)
                 {
+                    ref readonly var t = ref transforms[i];
+                    var localMatrix =
+                        Matrix4x4.CreateScale(t.Scale)
+                        * Matrix4x4.CreateFromQuaternion(t.Rotation)
+                        * Matrix4x4.CreateTranslation(t.Position);
+
+                    var entityId = new EntityId(entities[i].ID);
                     var parentId = new EntityId(world.Get<Parent>(entityId).Id);
                     if (world.Exists(parentId) && world.Has<LocalToWorld>(parentId))
                     {
                         ref readonly var parentWorld = ref world.Get<LocalToWorld>(parentId);
-                        worlds[i].Value = parentWorld.Value * localMatrix;
-                        continue;
+                        worlds[i].Value = localMatrix * parentWorld.Value;
+                    }
+                    else
+                    {
+                        worlds[i].Value = localMatrix;
                     }
                 }
-
-                worlds[i].Value = localMatrix;
             }
         }
     }
@@ -1484,17 +1513,8 @@ public sealed class BlurRenderSystem
     private IComputePipeline? _blurVPipeline;
     private IRenderPipeline? _blitPipeline;
     private ISampler? _blitSampler;
-    private IBuffer? _screenshotBuffer;
-    private int _bufferWidth;
-    private int _bufferHeight;
 
     public static bool BlurEnabled { get; set; } = false;
-    public static bool ScreenshotRequested { get; set; } = false;
-    public static bool HasPendingScreenshot { get; set; } = false;
-    public static IBuffer? ScreenshotBuffer { get; set; }
-    public static uint ScreenshotAlignedBytesPerRow { get; private set; }
-    public static int PendingScreenshotWidth { get; private set; }
-    public static int PendingScreenshotHeight { get; private set; }
 
     public void Update(KiloWorld world)
     {
@@ -1729,50 +1749,6 @@ public sealed class BlurRenderSystem
             encoder.SetBindingSet(0, blitBindings);
             encoder.Draw(3);
         });
-
-        // Pass 4 (可选): Screenshot — Copy source texture to readback buffer
-        if (ScreenshotRequested)
-        {
-            // Ensure readback buffer exists and matches current size
-            var alignedBytesPerRow = (uint)(((ws.Width * 4) + 255) & ~255);
-            var requiredSize = (nuint)(alignedBytesPerRow * ws.Height);
-            if (_screenshotBuffer == null || _bufferWidth != ws.Width || _bufferHeight != ws.Height)
-            {
-                _screenshotBuffer?.Dispose();
-                _screenshotBuffer = driver.CreateBuffer(new BufferDescriptor
-                {
-                    Size = requiredSize,
-                    Usage = BufferUsage.CopyDst | BufferUsage.MapRead,
-                });
-                _bufferWidth = ws.Width;
-                _bufferHeight = ws.Height;
-            }
-            var copySource = BlurEnabled ? blurredColor : offscreenColor;
-
-            graph.AddPass("ScreenshotCopy", setup: pass =>
-            {
-                // Resolve source inside setup — offscreenColor/blurredColor are assigned
-                // by earlier setup callbacks that run before this one during Compile.
-                var src = BlurEnabled ? blurredColor : offscreenColor;
-                pass.ReadTexture(src);
-            }, execute: ctx =>
-            {
-                var src = BlurEnabled ? blurredColor : offscreenColor;
-                var texture = ctx.GetTexture(src);
-                ctx.Encoder.CopyTextureToBuffer(texture, new TextureCopyRegion
-                {
-                    Width = texture.Width,
-                    Height = texture.Height,
-                }, _screenshotBuffer!, 0);
-            });
-
-            ScreenshotRequested = false;
-            HasPendingScreenshot = true;
-            ScreenshotBuffer = _screenshotBuffer;
-            ScreenshotAlignedBytesPerRow = alignedBytesPerRow;
-            PendingScreenshotWidth = ws.Width;
-            PendingScreenshotHeight = ws.Height;
-        }
 
         // 清理每帧的临时 BindingSet
         blurBindings?.Dispose();
