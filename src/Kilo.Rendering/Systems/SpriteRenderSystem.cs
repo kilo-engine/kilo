@@ -71,11 +71,11 @@ public sealed class SpriteRenderSystem
 
         int totalDrawn = sprites.Count;
         const int UniformAlign = 256;
-        int maxSprites = context.UniformBuffer is not null ? (int)(context.UniformBuffer.Size / (nuint)UniformAlign) : 0;
+        int maxSprites = context.Sprite.UniformBuffer is not null ? (int)(context.Sprite.UniformBuffer.Size / (nuint)UniformAlign) : 0;
         int drawCount = Math.Min(sprites.Count, maxSprites);
 
         // Bulk upload all sprite instance data before drawing
-        if (drawCount > 0 && context.UniformBuffer is not null)
+        if (drawCount > 0 && context.Sprite.UniformBuffer is not null)
         {
             var instanceData = new SpriteInstanceData[drawCount];
             for (int i = 0; i < drawCount; i++)
@@ -84,7 +84,7 @@ public sealed class SpriteRenderSystem
                 instanceData[i].Projection = projection;
                 instanceData[i].Color = sprites[i].Color;
             }
-            context.UniformBuffer.UploadData<SpriteInstanceData>(instanceData.AsSpan());
+            context.Sprite.UniformBuffer.UploadData<SpriteInstanceData>(instanceData.AsSpan());
         }
 
         // Add sprite pass to the shared RenderGraph
@@ -102,11 +102,11 @@ public sealed class SpriteRenderSystem
             pass.WriteTexture(backbuffer);
             pass.ColorAttachment(backbuffer, DriverLoadAction.Load, DriverStoreAction.Store);
 
-            if (context.UniformBuffer is not null)
+            if (context.Sprite.UniformBuffer is not null)
             {
                 var uniformBufferHandle = pass.ImportBuffer("SpriteUniformBuffer", new BufferDescriptor
                 {
-                    Size = context.UniformBuffer.Size,
+                    Size = context.Sprite.UniformBuffer.Size,
                     Usage = BufferUsage.Uniform | BufferUsage.CopyDst,
                 });
                 pass.ReadBuffer(uniformBufferHandle);
@@ -114,14 +114,14 @@ public sealed class SpriteRenderSystem
         }, execute: ctx =>
         {
             var encoder = ctx.Encoder;
-            encoder.SetPipeline(context.SpritePipeline!);
-            encoder.SetVertexBuffer(0, context.QuadVertexBuffer!);
-            encoder.SetIndexBuffer(context.QuadIndexBuffer!);
+            encoder.SetPipeline(context.Sprite.Pipeline!);
+            encoder.SetVertexBuffer(0, context.Sprite.QuadVertexBuffer!);
+            encoder.SetIndexBuffer(context.Sprite.QuadIndexBuffer!);
 
             for (int i = 0; i < drawCount; i++)
             {
                 uint offset = (uint)(i * UniformAlign);
-                encoder.SetBindingSet(0, context.BindingSet!, offset);
+                encoder.SetBindingSet(0, context.Sprite.BindingSet!, offset);
                 encoder.DrawIndexed(6);
 
                 if (shouldLog && i < 3)

@@ -15,23 +15,17 @@ public sealed class RenderContext
     public PipelineCache PipelineCache { get; set; } = new();
     public MaterialManager MaterialManager { get; } = new();
     public RenderGraph.RenderGraph RenderGraph { get; } = new();
-    public IRenderPipeline? SpritePipeline { get; set; }
-    public IBuffer? QuadVertexBuffer { get; set; }
-    public IBuffer? QuadIndexBuffer { get; set; }
-    public IBuffer? UniformBuffer { get; set; }
-    public IBindingSet? BindingSet { get; set; }
-    public IBuffer? ShadowDataBuffer { get; set; }
-    public ISampler? ShadowSampler { get; set; }
     public bool WindowResized { get; set; }
 
-    public List<Mesh> Meshes { get; set; } = [];
-    public List<Material> Materials { get; set; } = [];
+    private readonly List<Mesh> _meshes = [];
+    private readonly List<Material> _materials = [];
 
-    // Screenshot support
-    public bool ScreenshotRequested { get; set; }
-    public bool HasPendingScreenshot { get; set; }
-    public IBuffer? ScreenshotBuffer { get; set; }
-    public uint ScreenshotAlignedBytesPerRow { get; set; }
-    public int ScreenshotWidth { get; set; }
-    public int ScreenshotHeight { get; set; }
+    public IReadOnlyList<Mesh> Meshes => _meshes;
+    public IReadOnlyList<Material> Materials => _materials;
+
+    public int AddMesh(Mesh mesh) { _meshes.Add(mesh); return _meshes.Count - 1; }
+    public int AddMaterial(Material material) { _materials.Add(material); return _materials.Count - 1; }
+
+    public ScreenshotState Screenshot { get; } = new();
+    public SpriteRenderState Sprite { get; } = new();
 }

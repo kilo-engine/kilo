@@ -109,6 +109,6 @@ internal static class BuiltinMeshes
             ]
         };
 
-        context.Meshes.Add(cubeMesh);
+        context.AddMesh(cubeMesh);
     }
 }

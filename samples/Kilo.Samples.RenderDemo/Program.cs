@@ -234,8 +234,7 @@ app.AddSystem(KiloStage.Startup, world =>
             IndexCount = (uint)skinnedIndices.Length,
             Layouts = [SkinnedMesh.Layout]
         };
-        int skinnedMeshHandle = context.Meshes.Count;
-        context.Meshes.Add(skinnedMesh);
+        int skinnedMeshHandle = context.AddMesh(skinnedMesh);
 
         // Create skinned material pipeline
         var skinnedVs = context.ShaderCache.GetOrCreateShader(driver, SkinnedLitShaders.WGSL, "vs_main");
@@ -275,8 +274,8 @@ app.AddSystem(KiloStage.Startup, world =>
         var lightBindingSet = driver.CreateBindingSetForPipeline(skinnedPipeline, 2, [new UniformBufferBinding { Buffer = scene.LightBuffer, Binding = 0 }]);
 
         // Reuse shadow bindings
-        var shadowDataBuffer = context.ShadowDataBuffer;
-        var shadowSampler = context.ShadowSampler;
+        var shadowDataBuffer = scene.ShadowDataBuffer;
+        var shadowSampler = scene.ShadowSampler;
         var placeholderDepthTexture = driver.CreateTexture(new TextureDescriptor
         {
             Width = 1, Height = 1,
@@ -336,8 +335,7 @@ app.AddSystem(KiloStage.Startup, world =>
             AlbedoTexture = defaultTexture,
             AlbedoSampler = defaultSampler,
         };
-        int skinnedMaterialHandle = context.Materials.Count;
-        context.Materials.Add(skinnedMaterial);
+        int skinnedMaterialHandle = context.AddMaterial(skinnedMaterial);
 
         // Create main entity with skinned mesh
         var animatedArmEntity = world.Entity("AnimatedArm")
@@ -438,7 +436,7 @@ app.AddSystem(KiloStage.Update, world =>
     // ── P 键截图 ─────────────────────────────────────────────────────────
     if (input.IsKeyPressed((int)Key.P))
     {
-        world.GetResource<RenderContext>().ScreenshotRequested = true;
+        world.GetResource<RenderContext>().Screenshot.Requested = true;
         Console.WriteLine("[RenderDemo] Screenshot requested (P key)");
     }
 
@@ -829,8 +827,8 @@ public sealed class RenderDemoPlugin : IKiloPlugin
             [new UniformBufferBinding { Buffer = scene.LightBuffer, Binding = 0 }]);
 
         // Texture + shadow binding set (group 3)
-        var shadowSampler = context.ShadowSampler!;
-        var shadowDataBuffer = context.ShadowDataBuffer!;
+        var shadowSampler = scene.ShadowSampler!;
+        var shadowDataBuffer = scene.ShadowDataBuffer!;
 
         var placeholderDepth = driver.CreateTexture(new TextureDescriptor
         {
@@ -928,8 +926,7 @@ public sealed class RenderDemoPlugin : IKiloPlugin
             AlbedoTexture = albedoTexture,
             AlbedoSampler = albedoSampler,
         };
-        int skinnedMatHandle = context.Materials.Count;
-        context.Materials.Add(skinnedMaterial);
+        int skinnedMatHandle = context.AddMaterial(skinnedMaterial);
 
         // Additional primitives as children of the main entity so they share the model transform
         for (int p = 0; p < gltfModel.Primitives.Count; p++)
@@ -988,21 +985,21 @@ public sealed class RenderDemoPlugin : IKiloPlugin
             // Auto-screenshot after 30 frames (skip first frames for initialization)
             if (_frameCount == 30)
             {
-                context.ScreenshotRequested = true;
+                context.Screenshot.Requested = true;
                 Console.WriteLine($"[Kilo] Auto-screenshot at frame {_frameCount}");
             }
 
             // Process screenshot readback after render graph execution
-            if (context.HasPendingScreenshot && context.ScreenshotBuffer != null)
+            if (context.Screenshot.HasPending && context.Screenshot.Buffer != null)
             {
-                context.HasPendingScreenshot = false;
+                context.Screenshot.HasPending = false;
                 var driver = context.Driver;
-                var width = context.ScreenshotWidth;
-                var height = context.ScreenshotHeight;
-                var alignedBytesPerRow = context.ScreenshotAlignedBytesPerRow;
+                var width = context.Screenshot.Width;
+                var height = context.Screenshot.Height;
+                var alignedBytesPerRow = context.Screenshot.AlignedBytesPerRow;
                 var requiredSize = (nuint)(alignedBytesPerRow * height);
-                var pixelData = driver.ReadBufferSync(context.ScreenshotBuffer, 0, requiredSize);
-                context.ScreenshotBuffer = null;
+                var pixelData = driver.ReadBufferSync(context.Screenshot.Buffer, 0, requiredSize);
+                context.Screenshot.Buffer = null;
                 SaveScreenshot(width, height, alignedBytesPerRow, pixelData);
             }
         };

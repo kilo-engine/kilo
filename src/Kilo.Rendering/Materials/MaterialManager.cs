@@ -1,6 +1,5 @@
 using System.Numerics;
-using SixLabors.ImageSharp;
-using SixLabors.ImageSharp.PixelFormats;
+using Kilo.Rendering.Assets;
 using Kilo.Rendering.Driver;
 using Kilo.Rendering.RenderGraph;
 using Kilo.Rendering.Scene;
@@ -10,14 +9,11 @@ namespace Kilo.Rendering.Materials;
 
 /// <summary>
 /// Manages creation of materials with configurable properties.
-/// Reuses pipelines and caches textures/samplers.
+/// Reuses pipelines and delegates texture loading to TextureLoader.
 /// </summary>
 public sealed class MaterialManager
 {
-    private readonly Dictionary<string, ITexture> _textureCache = [];
-    private readonly Dictionary<string, ITextureView> _textureViewCache = [];
-    private ISampler? _defaultSampler;
-    private ITextureView? _placeholderDepthView;
+    private readonly TextureLoader _textureLoader = new();
 
     /// <summary>
     /// Creates a new material from the given descriptor.
@@ -48,14 +44,13 @@ public sealed class MaterialManager
         }
         else if (descriptor.AlbedoTexturePath != null)
         {
-            albedoTexture = GetOrCreateTexture(driver, descriptor.AlbedoTexturePath);
-            var textureView = GetOrCreateTextureView(driver, albedoTexture);
-            albedoSampler = GetOrCreateSampler(driver);
+            albedoTexture = _textureLoader.LoadTexture(driver, descriptor.AlbedoTexturePath);
+            var textureView = _textureLoader.GetOrCreateView(driver, albedoTexture);
+            albedoSampler = _textureLoader.GetOrCreateSampler(driver);
 
-            // Create group 3 with albedo + shadow placeholders
-            var shadowData = context.ShadowDataBuffer;
-            var shadowSampler = context.ShadowSampler;
-            var depthView = GetOrCreatePlaceholderDepthView(driver);
+            var shadowData = scene.ShadowDataBuffer;
+            var shadowSampler = scene.ShadowSampler;
+            var depthView = _textureLoader.GetOrCreatePlaceholderDepthView(driver);
             if (shadowData != null && shadowSampler != null)
             {
                 textureBindingSet = driver.CreateBindingSetForPipeline(pipeline, 3,
@@ -98,10 +93,10 @@ public sealed class MaterialManager
                 MipLevelCount = 1,
             });
 
-            albedoSampler = GetOrCreateSampler(driver);
-            var shadowData = context.ShadowDataBuffer;
-            var shadowSampler = context.ShadowSampler;
-            var depthView = GetOrCreatePlaceholderDepthView(driver);
+            albedoSampler = _textureLoader.GetOrCreateSampler(driver);
+            var shadowData = scene.ShadowDataBuffer;
+            var shadowSampler = scene.ShadowSampler;
+            var depthView = _textureLoader.GetOrCreatePlaceholderDepthView(driver);
             if (shadowData != null && shadowSampler != null)
             {
                 textureBindingSet = driver.CreateBindingSetForPipeline(pipeline, 3,
@@ -132,8 +127,7 @@ public sealed class MaterialManager
             AlbedoSampler = albedoSampler,
         };
 
-        context.Materials.Add(material);
-        return context.Materials.Count - 1;
+        return context.AddMaterial(material);
     }
 
     private IRenderPipeline GetOrCreatePipeline(RenderContext context, GpuSceneData scene, IRenderDriver driver)
@@ -164,96 +158,5 @@ public sealed class MaterialManager
                 DepthWriteEnabled = true,
             },
         }, (nuint)ObjectData.Size, groupIndex: 1, bindGroupCount: 4);
-    }
-
-    private ITexture GetOrCreateTexture(IRenderDriver driver, string path)
-    {
-        if (_textureCache.TryGetValue(path, out var existing))
-            return existing;
-
-        // Load image using ImageSharp
-        using var image = SixLabors.ImageSharp.Image.Load<Rgba32>(path);
-        var width = image.Width;
-        var height = image.Height;
-
-        // Extract RGBA pixel data
-        var pixels = new byte[width * height * 4];
-        for (int y = 0; y < height; y++)
-        {
-            for (int x = 0; x < width; x++)
-            {
-                var pixel = image[x, y];
-                int idx = (y * width + x) * 4;
-                pixels[idx] = pixel.R;
-                pixels[idx + 1] = pixel.G;
-                pixels[idx + 2] = pixel.B;
-                pixels[idx + 3] = pixel.A;
-            }
-        }
-
-        var texture = driver.CreateTexture(new TextureDescriptor
-        {
-            Width = width,
-            Height = height,
-            Format = DriverPixelFormat.RGBA8Unorm,
-            Usage = TextureUsage.CopyDst | TextureUsage.ShaderBinding,
-        });
-        texture.UploadData<byte>(pixels);
-
-        _textureCache[path] = texture;
-        return texture;
-    }
-
-    private ITextureView GetOrCreateTextureView(IRenderDriver driver, ITexture texture)
-    {
-        string key = $"{texture.Width}x{texture.Height}_{texture.Format}";
-        if (_textureViewCache.TryGetValue(key, out var existing))
-            return existing;
-
-        var view = driver.CreateTextureView(texture, new TextureViewDescriptor
-        {
-            Format = texture.Format,
-            Dimension = TextureViewDimension.View2D,
-            MipLevelCount = 1,
-        });
-        _textureViewCache[key] = view;
-        return view;
-    }
-
-    private ISampler GetOrCreateSampler(IRenderDriver driver)
-    {
-        if (_defaultSampler != null)
-            return _defaultSampler;
-
-        _defaultSampler = driver.CreateSampler(new SamplerDescriptor
-        {
-            MinFilter = FilterMode.Linear,
-            MagFilter = FilterMode.Linear,
-            MipFilter = FilterMode.Linear,
-            AddressModeU = WrapMode.Repeat,
-            AddressModeV = WrapMode.Repeat,
-            AddressModeW = WrapMode.Repeat,
-        });
-        return _defaultSampler;
-    }
-
-    private ITextureView GetOrCreatePlaceholderDepthView(IRenderDriver driver)
-    {
-        if (_placeholderDepthView != null)
-            return _placeholderDepthView;
-
-        var depthTexture = driver.CreateTexture(new TextureDescriptor
-        {
-            Width = 1, Height = 1,
-            Format = DriverPixelFormat.Depth24Plus,
-            Usage = TextureUsage.ShaderBinding | TextureUsage.RenderAttachment,
-        });
-        _placeholderDepthView = driver.CreateTextureView(depthTexture, new TextureViewDescriptor
-        {
-            Format = DriverPixelFormat.Depth24Plus,
-            Dimension = TextureViewDimension.View2D,
-            MipLevelCount = 1,
-        });
-        return _placeholderDepthView;
     }
 }

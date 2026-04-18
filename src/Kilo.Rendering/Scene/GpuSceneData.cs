@@ -12,6 +12,8 @@ public sealed class GpuSceneData
     public IBuffer CameraBuffer { get; set; } = null!;
     public IBuffer ObjectDataBuffer { get; set; } = null!;
     public IBuffer LightBuffer { get; set; } = null!;
+    public IBuffer? ShadowDataBuffer { get; set; }
+    public ISampler? ShadowSampler { get; set; }
 
     /// <summary>Light-space ViewProjection matrix for shadow mapping.</summary>
     public Matrix4x4 ShadowLightVP;

@@ -9,9 +9,10 @@ public sealed class EndFrameSystem
         var context = world.GetResource<RenderContext>();
         var driver = context.Driver;
         var graph = context.RenderGraph;
+        var screenshot = context.Screenshot;
 
         // Add screenshot copy pass as the very last pass (after sprites/text)
-        if (context.ScreenshotRequested)
+        if (screenshot.Requested)
         {
             var ws = world.GetResource<WindowSize>();
             var width = ws.Width;
@@ -46,12 +47,12 @@ public sealed class EndFrameSystem
                 }, screenshotBuffer, 0);
             });
 
-            context.ScreenshotRequested = false;
-            context.HasPendingScreenshot = true;
-            context.ScreenshotBuffer = screenshotBuffer;
-            context.ScreenshotAlignedBytesPerRow = alignedBytesPerRow;
-            context.ScreenshotWidth = width;
-            context.ScreenshotHeight = height;
+            screenshot.Requested = false;
+            screenshot.HasPending = true;
+            screenshot.Buffer = screenshotBuffer;
+            screenshot.AlignedBytesPerRow = alignedBytesPerRow;
+            screenshot.Width = width;
+            screenshot.Height = height;
         }
 
         graph.Execute(driver);

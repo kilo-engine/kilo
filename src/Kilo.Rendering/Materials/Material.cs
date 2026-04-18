@@ -23,22 +23,3 @@ public sealed class Material
     /// <summary>Sampler for the albedo texture.</summary>
     public ISampler? AlbedoSampler { get; set; }
 }
-
-/// <summary>
-/// An instance of a material that can override specific bindings or use a dynamic offset.
-/// </summary>
-public sealed class MaterialInstance
-{
-    public Material Parent { get; }
-    public int DynamicOffsetIndex { get; set; }
-    public Dictionary<int, ITexture>? TextureOverrides { get; set; }
-
-    public MaterialInstance(Material parent)
-    {
-        Parent = parent;
-    }
-
-    public IRenderPipeline Pipeline => Parent.Pipeline;
-
-    public IBindingSet GetBindingSet(int index) => Parent.BindingSets[index];
-}

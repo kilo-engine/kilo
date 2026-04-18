@@ -352,8 +352,7 @@ public static class GltfLoader
             }]
         };
 
-        context.Meshes.Add(mesh);
-        int meshHandle = context.Meshes.Count - 1;
+        int meshHandle = context.AddMesh(mesh);
 
         // Create material from GLTF material
         var matDescriptor = new MaterialDescriptor { BaseColor = Vector4.One };

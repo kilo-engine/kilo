@@ -85,24 +85,9 @@ internal static class BuiltinMaterials
             AddressModeW = WrapMode.Repeat,
         });
 
-        // Shadow resources
-        var shadowSampler = driver.CreateSampler(new SamplerDescriptor
-        {
-            MinFilter = FilterMode.Linear,
-            MagFilter = FilterMode.Linear,
-            AddressModeU = WrapMode.ClampToEdge,
-            AddressModeV = WrapMode.ClampToEdge,
-            Compare = true,
-            CompareFunction = DriverCompareFunction.Less,
-        });
-
-        var shadowDataBuffer = driver.CreateBuffer(new BufferDescriptor
-        {
-            Size = 256,
-            Usage = BufferUsage.Uniform | BufferUsage.CopyDst,
-        });
-        context.ShadowDataBuffer = shadowDataBuffer;
-        context.ShadowSampler = shadowSampler;
+        // Shadow resources (created by SceneBuffers)
+        var shadowSampler = scene.ShadowSampler!;
+        var shadowDataBuffer = scene.ShadowDataBuffer!;
 
         var placeholderDepthTexture = driver.CreateTexture(new TextureDescriptor
         {
@@ -136,6 +121,6 @@ internal static class BuiltinMaterials
             AlbedoSampler = defaultSampler,
         };
 
-        context.Materials.Add(basicLitMaterial);
+        context.AddMaterial(basicLitMaterial);
     }
 }

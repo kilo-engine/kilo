@@ -27,5 +27,25 @@ internal static class SceneBuffers
             Size = (nuint)LightBufferSize,
             Usage = BufferUsage.Uniform | BufferUsage.CopyDst,
         });
+
+        // Shadow resources
+        var shadowSampler = driver.CreateSampler(new SamplerDescriptor
+        {
+            MinFilter = FilterMode.Linear,
+            MagFilter = FilterMode.Linear,
+            AddressModeU = WrapMode.ClampToEdge,
+            AddressModeV = WrapMode.ClampToEdge,
+            Compare = true,
+            CompareFunction = DriverCompareFunction.Less,
+        });
+
+        var shadowDataBuffer = driver.CreateBuffer(new BufferDescriptor
+        {
+            Size = 256,
+            Usage = BufferUsage.Uniform | BufferUsage.CopyDst,
+        });
+
+        scene.ShadowSampler = shadowSampler;
+        scene.ShadowDataBuffer = shadowDataBuffer;
     }
 }

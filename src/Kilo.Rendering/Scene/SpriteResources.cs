@@ -69,7 +69,7 @@ internal static class SpriteResources
             DepthStencil = null,
         };
 
-        context.SpritePipeline = context.PipelineCache.GetOrCreate(driver, spritePipelineKey, () => driver.CreateRenderPipelineWithDynamicUniforms(new RenderPipelineDescriptor
+        context.Sprite.Pipeline = context.PipelineCache.GetOrCreate(driver, spritePipelineKey, () => driver.CreateRenderPipelineWithDynamicUniforms(new RenderPipelineDescriptor
         {
             VertexShader = spriteVertexShader,
             FragmentShader = spriteFragmentShader,
@@ -81,27 +81,27 @@ internal static class SpriteResources
         float[] quadVertices = [-0.5f, 0.5f, 0.5f, 0.5f, -0.5f, -0.5f, 0.5f, -0.5f];
         uint[] quadIndices = [0u, 1, 2, 2, 1, 3];
 
-        context.QuadVertexBuffer = driver.CreateBuffer(new BufferDescriptor
+        context.Sprite.QuadVertexBuffer = driver.CreateBuffer(new BufferDescriptor
         {
             Size = (nuint)(quadVertices.Length * sizeof(float)),
             Usage = BufferUsage.Vertex | BufferUsage.CopyDst,
         });
-        context.QuadVertexBuffer.UploadData<float>(quadVertices);
+        context.Sprite.QuadVertexBuffer.UploadData<float>(quadVertices);
 
-        context.QuadIndexBuffer = driver.CreateBuffer(new BufferDescriptor
+        context.Sprite.QuadIndexBuffer = driver.CreateBuffer(new BufferDescriptor
         {
             Size = (nuint)(quadIndices.Length * sizeof(uint)),
             Usage = BufferUsage.Index | BufferUsage.CopyDst,
         });
-        context.QuadIndexBuffer.UploadData<uint>(quadIndices);
+        context.Sprite.QuadIndexBuffer.UploadData<uint>(quadIndices);
 
-        context.UniformBuffer = driver.CreateBuffer(new BufferDescriptor
+        context.Sprite.UniformBuffer = driver.CreateBuffer(new BufferDescriptor
         {
             Size = (nuint)UniformBufferSize,
             Usage = BufferUsage.Uniform | BufferUsage.CopyDst,
         });
 
-        context.BindingSet = driver.CreateDynamicUniformBindingSet(
-            context.SpritePipeline, 0, context.UniformBuffer, UniformStructSize);
+        context.Sprite.BindingSet = driver.CreateDynamicUniformBindingSet(
+            context.Sprite.Pipeline, 0, context.Sprite.UniformBuffer, UniformStructSize);
     }
 }

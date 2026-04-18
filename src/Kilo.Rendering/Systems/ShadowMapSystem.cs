@@ -120,12 +120,12 @@ public sealed class ShadowMapSystem
         _shadowCameraBuffer!.UploadData<CameraData>(shadowCamArray.AsSpan());
 
         // Upload shadow data for main pass (group 4, binding 2)
-        if (context.ShadowDataBuffer != null)
+        if (scene.ShadowDataBuffer != null)
         {
             var shadowUniform = new ShadowUniformData { LightVP = lightVP, ShadowEnabled = 1 };
             var shadowArray = new ShadowUniformData[1];
             shadowArray[0] = shadowUniform;
-            context.ShadowDataBuffer.UploadData<ShadowUniformData>(shadowArray.AsSpan());
+            scene.ShadowDataBuffer.UploadData<ShadowUniformData>(shadowArray.AsSpan());
         }
 
         // Add shadow pass to shared RenderGraph
