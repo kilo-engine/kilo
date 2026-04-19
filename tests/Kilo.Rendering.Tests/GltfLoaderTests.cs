@@ -1,7 +1,11 @@
 using System.Numerics;
 using Kilo.Rendering.Assets;
 using Kilo.Rendering.Driver;
-using Kilo.Rendering.Resources;
+using Kilo.Rendering.Meshes;
+using Kilo.Rendering.Materials;
+using Kilo.Rendering.Animation;
+using Kilo.Rendering.Text;
+using Kilo.Rendering.Scene;
 using SharpGLTF.Geometry;
 using SharpGLTF.Geometry.VertexTypes;
 using SharpGLTF.Materials;
@@ -85,7 +89,7 @@ public class GltfLoaderTests
         };
 
         // Default cube mesh (required by MaterialManager for pipeline layout)
-        context.Meshes.Add(new Mesh
+        context.AddMesh(new Mesh
         {
             VertexBuffer = driver.CreateBuffer(new RenderGraph.BufferDescriptor { Size = 256, Usage = RenderGraph.BufferUsage.Vertex }),
             IndexBuffer = driver.CreateBuffer(new RenderGraph.BufferDescriptor { Size = 64, Usage = RenderGraph.BufferUsage.Index }),

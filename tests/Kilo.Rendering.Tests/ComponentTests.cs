@@ -15,10 +15,10 @@ public class ComponentTests
     }
 
     [Fact]
-    public void LocalToWorld_HasDefaultZero()
+    public void LocalToWorld_DefaultsToIdentity()
     {
         var localToWorld = new LocalToWorld();
-        Assert.Equal(default(Matrix4x4), localToWorld.Value);
+        Assert.Equal(Matrix4x4.Identity, localToWorld.Value);
     }
 
     [Fact]

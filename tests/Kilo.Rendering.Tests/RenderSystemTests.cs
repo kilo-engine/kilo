@@ -1,7 +1,11 @@
 using System.Numerics;
 using Kilo.ECS;
 using Kilo.Rendering.Driver;
-using Kilo.Rendering.Resources;
+using Kilo.Rendering.Meshes;
+using Kilo.Rendering.Materials;
+using Kilo.Rendering.Animation;
+using Kilo.Rendering.Text;
+using Kilo.Rendering.Scene;
 using Xunit;
 
 namespace Kilo.Rendering.Tests;
@@ -45,7 +49,7 @@ public class RenderSystemTests
             IndexCount = 36,
             Layouts = []
         };
-        context.Meshes.Add(mesh);
+        context.AddMesh(mesh);
 
         // Create a fake material
         var pipeline = driver.CreateRenderPipeline(new RenderPipelineDescriptor
@@ -72,7 +76,7 @@ public class RenderSystemTests
                 }),
             ]
         };
-        context.Materials.Add(material);
+        context.AddMaterial(material);
 
         world.AddResource(context);
         world.AddResource(new WindowSize { Width = 1280, Height = 720 });

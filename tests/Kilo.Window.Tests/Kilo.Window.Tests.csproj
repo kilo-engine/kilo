@@ -1,11 +1,11 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <RootNamespace>Kilo.Input.Tests</RootNamespace>
-    <AssemblyName>Kilo.Input.Tests</AssemblyName>
+    <RootNamespace>Kilo.Window.Tests</RootNamespace>
+    <AssemblyName>Kilo.Window.Tests</AssemblyName>
     <IsPackable>false</IsPackable>
   </PropertyGroup>
   <ItemGroup>
-    <ProjectReference Include="..\..\src\Kilo.Input\Kilo.Input.csproj" />
+    <ProjectReference Include="..\..\src\Kilo.Window\Kilo.Window.csproj" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.0" />

@@ -1,6 +1,6 @@
 using Kilo.ECS;
 
-namespace Kilo.Input;
+namespace Kilo.Window;
 
 /// <summary>
 /// Polls input from the windowing system and updates InputState.

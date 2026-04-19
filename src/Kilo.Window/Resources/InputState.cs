@@ -1,6 +1,6 @@
 using System.Numerics;
 
-namespace Kilo.Input;
+namespace Kilo.Window;
 
 /// <summary>
 /// Current frame input state for keyboard and mouse.

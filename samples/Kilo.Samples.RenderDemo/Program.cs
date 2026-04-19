@@ -17,7 +17,7 @@
 
 using System.Numerics;
 using Kilo.ECS;
-using Kilo.Input;
+using Kilo.Window;
 using Kilo.Rendering;
 using Kilo.Rendering.Assets;
 using Kilo.Rendering.Driver;
@@ -950,7 +950,7 @@ public sealed class RenderDemoPlugin : IKiloPlugin
     public void Run(KiloApp app)
     {
         Console.WriteLine("[Kilo] Creating window...");
-        var window = WindowHelper.CreateWindow(_settings);
+        var window = WindowHelper.CreateWindow(_settings.Width, _settings.Height, _settings.Title, _settings.VSync);
         var context = app.World.GetResource<RenderContext>();
         var scene = app.World.GetResource<GpuSceneData>();
 

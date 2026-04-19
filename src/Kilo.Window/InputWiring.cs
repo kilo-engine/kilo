@@ -1,10 +1,9 @@
 using System.Numerics;
 using Kilo.ECS;
-using Kilo.Input;
 using Silk.NET.Input;
 using Silk.NET.Windowing;
 
-namespace Kilo.Rendering;
+namespace Kilo.Window;
 
 public static class InputWiring
 {

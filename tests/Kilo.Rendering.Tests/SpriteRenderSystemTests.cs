@@ -2,7 +2,11 @@ using System.Numerics;
 using Kilo.ECS;
 using Kilo.Rendering.Driver;
 using Kilo.Rendering.RenderGraph;
-using Kilo.Rendering.Resources;
+using Kilo.Rendering.Meshes;
+using Kilo.Rendering.Materials;
+using Kilo.Rendering.Animation;
+using Kilo.Rendering.Text;
+using Kilo.Rendering.Scene;
 using Xunit;
 
 namespace Kilo.Rendering.Tests;
@@ -17,15 +21,15 @@ public class SpriteRenderSystemTests
         var context = new RenderContext { Driver = driver };
 
         // Create sprite resources
-        context.QuadVertexBuffer = driver.CreateBuffer(new BufferDescriptor { Size = 64, Usage = BufferUsage.Vertex });
-        context.QuadIndexBuffer = driver.CreateBuffer(new BufferDescriptor { Size = 64, Usage = BufferUsage.Index });
-        context.UniformBuffer = driver.CreateBuffer(new BufferDescriptor { Size = 4096, Usage = BufferUsage.Uniform | BufferUsage.CopyDst });
-        context.SpritePipeline = driver.CreateRenderPipeline(new RenderPipelineDescriptor
+        context.Sprite.QuadVertexBuffer = driver.CreateBuffer(new BufferDescriptor { Size = 64, Usage = BufferUsage.Vertex });
+        context.Sprite.QuadIndexBuffer = driver.CreateBuffer(new BufferDescriptor { Size = 64, Usage = BufferUsage.Index });
+        context.Sprite.UniformBuffer = driver.CreateBuffer(new BufferDescriptor { Size = 4096, Usage = BufferUsage.Uniform | BufferUsage.CopyDst });
+        context.Sprite.Pipeline = driver.CreateRenderPipeline(new RenderPipelineDescriptor
         {
             VertexShader = driver.CreateShaderModule("", "vs"),
             FragmentShader = driver.CreateShaderModule("", "fs"),
         });
-        context.BindingSet = driver.CreateBindingSet(new BindingSetDescriptor
+        context.Sprite.BindingSet = driver.CreateBindingSet(new BindingSetDescriptor
         {
             Layout = new BindingSetLayout { Entries = [] }
         });
@@ -74,15 +78,15 @@ public class SpriteRenderSystemTests
         var driver = new MockRenderDriver();
         var context = new RenderContext { Driver = driver };
 
-        context.QuadVertexBuffer = driver.CreateBuffer(new BufferDescriptor { Size = 64, Usage = BufferUsage.Vertex });
-        context.QuadIndexBuffer = driver.CreateBuffer(new BufferDescriptor { Size = 64, Usage = BufferUsage.Index });
-        context.UniformBuffer = driver.CreateBuffer(new BufferDescriptor { Size = 4096, Usage = BufferUsage.Uniform | BufferUsage.CopyDst });
-        context.SpritePipeline = driver.CreateRenderPipeline(new RenderPipelineDescriptor
+        context.Sprite.QuadVertexBuffer = driver.CreateBuffer(new BufferDescriptor { Size = 64, Usage = BufferUsage.Vertex });
+        context.Sprite.QuadIndexBuffer = driver.CreateBuffer(new BufferDescriptor { Size = 64, Usage = BufferUsage.Index });
+        context.Sprite.UniformBuffer = driver.CreateBuffer(new BufferDescriptor { Size = 4096, Usage = BufferUsage.Uniform | BufferUsage.CopyDst });
+        context.Sprite.Pipeline = driver.CreateRenderPipeline(new RenderPipelineDescriptor
         {
             VertexShader = driver.CreateShaderModule("", "vs"),
             FragmentShader = driver.CreateShaderModule("", "fs"),
         });
-        context.BindingSet = driver.CreateBindingSet(new BindingSetDescriptor
+        context.Sprite.BindingSet = driver.CreateBindingSet(new BindingSetDescriptor
         {
             Layout = new BindingSetLayout { Entries = [] }
         });

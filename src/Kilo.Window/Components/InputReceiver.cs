@@ -1,4 +1,4 @@
-namespace Kilo.Input;
+namespace Kilo.Window;
 
 /// <summary>
 /// Tag component marking entities that receive input.

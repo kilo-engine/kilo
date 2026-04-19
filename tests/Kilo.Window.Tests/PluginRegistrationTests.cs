@@ -1,22 +1,22 @@
 using Kilo.ECS;
-using Kilo.Input;
+using Kilo.Window;
 using Xunit;
 
-namespace Kilo.Input.Tests;
+namespace Kilo.Window.Tests;
 
 public class PluginRegistrationTests
 {
     [Fact]
-    public void InputPlugin_ImplementsIKiloPlugin()
+    public void WindowPlugin_ImplementsIKiloPlugin()
     {
-        var plugin = new InputPlugin();
+        var plugin = new WindowPlugin();
         Assert.IsAssignableFrom<IKiloPlugin>(plugin);
     }
 
     [Fact]
-    public void InputPlugin_Build_DoesNotThrow()
+    public void WindowPlugin_Build_DoesNotThrow()
     {
-        var plugin = new InputPlugin();
+        var plugin = new WindowPlugin();
         var app = new KiloApp();
 
         var exception = Record.Exception(() => plugin.Build(app));
@@ -24,9 +24,9 @@ public class PluginRegistrationTests
     }
 
     [Fact]
-    public void InputPlugin_RegistersInputStateResource()
+    public void WindowPlugin_RegistersInputStateResource()
     {
-        var plugin = new InputPlugin();
+        var plugin = new WindowPlugin();
         var app = new KiloApp();
         plugin.Build(app);
 
@@ -35,9 +35,9 @@ public class PluginRegistrationTests
     }
 
     [Fact]
-    public void InputPlugin_RegistersInputSettingsResource()
+    public void WindowPlugin_RegistersInputSettingsResource()
     {
-        var plugin = new InputPlugin();
+        var plugin = new WindowPlugin();
         var app = new KiloApp();
         plugin.Build(app);
 
@@ -46,9 +46,9 @@ public class PluginRegistrationTests
     }
 
     [Fact]
-    public void InputPlugin_RegistersInputPollSystem()
+    public void WindowPlugin_RegistersInputPollSystem()
     {
-        var plugin = new InputPlugin();
+        var plugin = new WindowPlugin();
         var app = new KiloApp();
         plugin.Build(app);
 
@@ -61,7 +61,7 @@ public class PluginRegistrationTests
     [Fact]
     public void InputSettings_HasDefaultValues()
     {
-        var plugin = new InputPlugin();
+        var plugin = new WindowPlugin();
         var app = new KiloApp();
         plugin.Build(app);
 

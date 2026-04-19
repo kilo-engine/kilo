@@ -1,7 +1,11 @@
 using System.Numerics;
 using Kilo.ECS;
 using Kilo.Rendering.Driver;
-using Kilo.Rendering.Resources;
+using Kilo.Rendering.Meshes;
+using Kilo.Rendering.Materials;
+using Kilo.Rendering.Animation;
+using Kilo.Rendering.Text;
+using Kilo.Rendering.Scene;
 using Xunit;
 
 namespace Kilo.Rendering.Tests;
@@ -37,15 +41,16 @@ public class ShadowMapSystemTests
 
         world.AddResource(context);
         world.AddResource(new WindowSize { Width = 800, Height = 600 });
-        world.AddResource(new GpuSceneData
+        var scene = new GpuSceneData
         {
             CameraBuffer = cameraBuffer,
             ObjectDataBuffer = objectBuffer,
             LightBuffer = lightBuffer,
             DrawCount = 0,
             DrawData = [],
-        });
-        context.ShadowDataBuffer = shadowDataBuffer;
+        };
+        world.AddResource(scene);
+        scene.ShadowDataBuffer = shadowDataBuffer;
 
         // Add directional light
         world.Entity("Sun")
@@ -84,7 +89,7 @@ public class ShadowMapSystemTests
         world.AddResource(context);
         world.AddResource(new WindowSize { Width = 800, Height = 600 });
         world.AddResource(scene);
-        context.ShadowDataBuffer = driver.CreateBuffer(new RenderGraph.BufferDescriptor { Size = 256, Usage = RenderGraph.BufferUsage.Uniform });
+        scene.ShadowDataBuffer = driver.CreateBuffer(new RenderGraph.BufferDescriptor { Size = 256, Usage = RenderGraph.BufferUsage.Uniform });
 
         var lightDir = new Vector3(0.5f, -1f, -0.5f);
         world.Entity("Sun")

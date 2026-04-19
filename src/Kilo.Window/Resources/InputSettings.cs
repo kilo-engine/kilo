@@ -1,4 +1,4 @@
-namespace Kilo.Input;
+namespace Kilo.Window;
 
 /// <summary>
 /// Input configuration settings.

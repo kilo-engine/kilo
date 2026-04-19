@@ -1,8 +1,8 @@
 using System.Numerics;
-using Kilo.Input;
+using Kilo.Window;
 using Xunit;
 
-namespace Kilo.Input.Tests;
+namespace Kilo.Window.Tests;
 
 public class InputStateTests
 {

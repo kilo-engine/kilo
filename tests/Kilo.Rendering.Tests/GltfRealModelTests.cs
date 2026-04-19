@@ -2,7 +2,11 @@ using System.Numerics;
 using Kilo.Rendering.Assets;
 using Kilo.Rendering.Driver;
 using Kilo.Rendering.RenderGraph;
-using Kilo.Rendering.Resources;
+using Kilo.Rendering.Meshes;
+using Kilo.Rendering.Materials;
+using Kilo.Rendering.Animation;
+using Kilo.Rendering.Text;
+using Kilo.Rendering.Scene;
 using Xunit;
 
 namespace Kilo.Rendering.Tests;
@@ -19,7 +23,7 @@ public class GltfRealModelTests
     private static RenderContext SetupContext(MockRenderDriver driver)
     {
         var context = new RenderContext { Driver = driver, ShaderCache = new ShaderCache(), PipelineCache = new PipelineCache() };
-        context.Meshes.Add(new Mesh
+        context.AddMesh(new Mesh
         {
             VertexBuffer = driver.CreateBuffer(new BufferDescriptor { Size = 256, Usage = BufferUsage.Vertex }),
             IndexBuffer = driver.CreateBuffer(new BufferDescriptor { Size = 64, Usage = BufferUsage.Index }),

@@ -1,13 +1,34 @@
 using System.Numerics;
 using Kilo.ECS;
 using Kilo.Rendering.Driver;
-using Kilo.Rendering.Resources;
+using Kilo.Rendering.Meshes;
+using Kilo.Rendering.Materials;
+using Kilo.Rendering.Animation;
+using Kilo.Rendering.Text;
+using Kilo.Rendering.Scene;
 using Xunit;
 
 namespace Kilo.Rendering.Tests;
 
 public class FrustumCullingSystemTests
 {
+    /// <summary>Helper: creates a RenderContext with a default unit-cube mesh at index 0.</summary>
+    private static RenderContext CreateContextWithDefaultMesh()
+    {
+        var driver = new MockRenderDriver();
+        var context = new RenderContext { Driver = driver };
+        var vb = driver.CreateBuffer(new RenderGraph.BufferDescriptor { Size = 128, Usage = RenderGraph.BufferUsage.Vertex });
+        var ib = driver.CreateBuffer(new RenderGraph.BufferDescriptor { Size = 64, Usage = RenderGraph.BufferUsage.Index });
+        context.AddMesh(new Mesh
+        {
+            VertexBuffer = vb,
+            IndexBuffer = ib,
+            IndexCount = 36,
+            Bounds = (new Vector3(-0.5f, -0.5f, -0.5f), new Vector3(0.5f, 0.5f, 0.5f)),
+        });
+        return context;
+    }
+
     [Fact]
     public void FrustumCulling_NoCamera_DoesNotThrow()
     {
@@ -25,8 +46,7 @@ public class FrustumCullingSystemTests
     public void FrustumCulling_VisibleEntity_NotCulled()
     {
         var world = new KiloWorld();
-        var driver = new MockRenderDriver();
-        var context = new RenderContext { Driver = driver };
+        var context = CreateContextWithDefaultMesh();
         world.AddResource(context);
         world.AddResource(new WindowSize { Width = 800, Height = 600 });
 
@@ -59,8 +79,7 @@ public class FrustumCullingSystemTests
     public void FrustumCulling_BehindCamera_GetsCulled()
     {
         var world = new KiloWorld();
-        var driver = new MockRenderDriver();
-        var context = new RenderContext { Driver = driver };
+        var context = CreateContextWithDefaultMesh();
         world.AddResource(context);
         world.AddResource(new WindowSize { Width = 800, Height = 600 });
 
@@ -92,8 +111,7 @@ public class FrustumCullingSystemTests
     public void FrustumCulling_InvalidMeshHandle_GetsCulled()
     {
         var world = new KiloWorld();
-        var driver = new MockRenderDriver();
-        var context = new RenderContext { Driver = driver };
+        var context = CreateContextWithDefaultMesh();
         world.AddResource(context);
         world.AddResource(new WindowSize { Width = 800, Height = 600 });
 
