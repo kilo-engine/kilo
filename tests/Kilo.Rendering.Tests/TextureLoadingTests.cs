@@ -181,11 +181,12 @@ public class TextureLoadingTests
             entity.Set(new LocalToWorld { Value = Matrix4x4.Identity });
             entity.Set(new MeshRenderer { MeshHandle = 0, MaterialHandle = textureHandle });
 
-            new PrepareGpuSceneSystem().Update(world);
+            new CameraPrepareSystem().Update(world);
+            new ObjectPrepareSystem().Update(world);
+            new LightPrepareSystem().Update(world);
 
             Assert.Equal(1, scene.DrawCount);
-            Assert.Equal(1, scene.DrawData.Length);
-            Assert.Equal(textureHandle, scene.DrawData[0].MaterialId);
+            Assert.Equal(textureHandle, scene.GetDraw(0).MaterialId);
         }
         finally
         {

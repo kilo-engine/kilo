@@ -18,13 +18,26 @@ public sealed class GpuSceneData
     /// <summary>Light-space ViewProjection matrix for shadow mapping.</summary>
     public Matrix4x4 ShadowLightVP;
 
-    public int DrawCount { get; set; }
-    public int LightCount { get; set; }
+    // Draw data — encapsulated
+    private DrawData[] _drawData = [];
+    private int _drawCount;
+    private int _lightCount;
 
-    /// <summary>
-    /// CPU-side draw data populated by PrepareGpuSceneSystem.
-    /// </summary>
-    public DrawData[] DrawData { get; set; } = [];
+    public int DrawCount => _drawCount;
+    public int LightCount => _lightCount;
+
+    /// <summary>Pending camera data, written by CameraPrepareSystem, finalized by LightPrepareSystem.</summary>
+    internal CameraData PendingCamera;
+
+    public DrawData GetDraw(int index) => _drawData[index];
+
+    public void SetDrawData(DrawData[] data, int count)
+    {
+        _drawData = data;
+        _drawCount = count;
+    }
+
+    public void SetLightCount(int count) => _lightCount = count;
 }
 
 /// <summary>

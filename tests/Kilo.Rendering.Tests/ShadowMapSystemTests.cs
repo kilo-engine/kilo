@@ -46,9 +46,8 @@ public class ShadowMapSystemTests
             CameraBuffer = cameraBuffer,
             ObjectDataBuffer = objectBuffer,
             LightBuffer = lightBuffer,
-            DrawCount = 0,
-            DrawData = [],
         };
+
         world.AddResource(scene);
         scene.ShadowDataBuffer = shadowDataBuffer;
 
@@ -82,9 +81,8 @@ public class ShadowMapSystemTests
             CameraBuffer = cameraBuffer,
             ObjectDataBuffer = objectBuffer,
             LightBuffer = lightBuffer,
-            DrawCount = 0,
-            DrawData = [],
         };
+
 
         world.AddResource(context);
         world.AddResource(new WindowSize { Width = 800, Height = 600 });

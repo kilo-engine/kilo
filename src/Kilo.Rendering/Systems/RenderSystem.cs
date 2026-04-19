@@ -70,7 +70,7 @@ public sealed class RenderSystem
 
             for (int i = 0; i < scene.DrawCount; i++)
             {
-                var draw = scene.DrawData[i];
+                var draw = scene.GetDraw(i);
                 if (draw.MeshHandle < 0 || draw.MeshHandle >= context.Meshes.Count) continue;
                 if (draw.MaterialId < 0 || draw.MaterialId >= context.Materials.Count) continue;
 
@@ -81,7 +81,7 @@ public sealed class RenderSystem
                 encoder.SetVertexBuffer(0, mesh.VertexBuffer);
                 encoder.SetIndexBuffer(mesh.IndexBuffer);
                 encoder.SetBindingSet(0, material.BindingSets[0]);
-                encoder.SetBindingSet(1, material.BindingSets[1], (uint)(i * 256));
+                encoder.SetBindingSet(1, material.BindingSets[1], (uint)(i * ObjectData.Size));
                 encoder.SetBindingSet(2, material.BindingSets[2]);
                 if (material.BindingSets.Length > 3)
                     encoder.SetBindingSet(3, material.BindingSets[3]);

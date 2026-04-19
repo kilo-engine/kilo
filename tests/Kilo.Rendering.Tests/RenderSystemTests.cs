@@ -25,8 +25,6 @@ public class RenderSystemTests
             CameraBuffer = driver.CreateBuffer(new RenderGraph.BufferDescriptor { Size = 256, Usage = RenderGraph.BufferUsage.Uniform }),
             ObjectDataBuffer = driver.CreateBuffer(new RenderGraph.BufferDescriptor { Size = 1024, Usage = RenderGraph.BufferUsage.Uniform }),
             LightBuffer = driver.CreateBuffer(new RenderGraph.BufferDescriptor { Size = 1024, Usage = RenderGraph.BufferUsage.Uniform }),
-            DrawCount = 0,
-            DrawData = [],
         });
 
         var system = new RenderSystem();
@@ -80,17 +78,14 @@ public class RenderSystemTests
 
         world.AddResource(context);
         world.AddResource(new WindowSize { Width = 1280, Height = 720 });
-        world.AddResource(new GpuSceneData
+        var scene = new GpuSceneData
         {
             CameraBuffer = driver.CreateBuffer(new RenderGraph.BufferDescriptor { Size = 256, Usage = RenderGraph.BufferUsage.Uniform }),
             ObjectDataBuffer = driver.CreateBuffer(new RenderGraph.BufferDescriptor { Size = 1024, Usage = RenderGraph.BufferUsage.Uniform }),
             LightBuffer = driver.CreateBuffer(new RenderGraph.BufferDescriptor { Size = 1024, Usage = RenderGraph.BufferUsage.Uniform }),
-            DrawCount = 1,
-            DrawData =
-            [
-                new DrawData { MeshHandle = 0, MaterialId = 0 }
-            ],
-        });
+        };
+        scene.SetDrawData([new DrawData { MeshHandle = 0, MaterialId = 0 }], 1);
+        world.AddResource(scene);
 
         var system = new RenderSystem();
         var exception = Record.Exception(() => system.Update(world));

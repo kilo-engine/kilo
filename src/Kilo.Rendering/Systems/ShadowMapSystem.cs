@@ -151,13 +151,13 @@ public sealed class ShadowMapSystem
 
             for (int i = 0; i < scene.DrawCount; i++)
             {
-                var draw = scene.DrawData[i];
+                var draw = scene.GetDraw(i);
                 if (draw.MeshHandle < 0 || draw.MeshHandle >= context.Meshes.Count) continue;
 
                 var mesh = context.Meshes[draw.MeshHandle];
                 encoder.SetVertexBuffer(0, mesh.VertexBuffer);
                 encoder.SetIndexBuffer(mesh.IndexBuffer);
-                encoder.SetBindingSet(1, _shadowObjectBinding!, (uint)(i * 256));
+                encoder.SetBindingSet(1, _shadowObjectBinding!, (uint)(i * ObjectData.Size));
                 encoder.DrawIndexed((int)mesh.IndexCount);
             }
         });

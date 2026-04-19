@@ -67,7 +67,9 @@ public class PrepareGpuSceneSystemTests
 
         // Run camera system first to compute matrices
         new CameraSystem().Update(world);
-        new PrepareGpuSceneSystem().Update(world);
+        new CameraPrepareSystem().Update(world);
+        new ObjectPrepareSystem().Update(world);
+        new LightPrepareSystem().Update(world);
 
         Assert.Equal(CameraData.Size, cameraBuffer.LastUpload.Length);
         var cameraData = MemoryMarshal.Read<CameraData>(cameraBuffer.LastUpload.AsSpan());
@@ -109,7 +111,9 @@ public class PrepareGpuSceneSystemTests
             Range = 10.0f
         });
 
-        new PrepareGpuSceneSystem().Update(world);
+        new CameraPrepareSystem().Update(world);
+        new ObjectPrepareSystem().Update(world);
+        new LightPrepareSystem().Update(world);
 
         var scene = world.GetResource<GpuSceneData>();
         Assert.Equal(2, scene.LightCount);
@@ -153,13 +157,14 @@ public class PrepareGpuSceneSystemTests
         e2.Set(new LocalToWorld { Value = Matrix4x4.CreateTranslation(4, 5, 6) });
         e2.Set(new MeshRenderer { MeshHandle = 0, MaterialHandle = 2 });
 
-        new PrepareGpuSceneSystem().Update(world);
+        new CameraPrepareSystem().Update(world);
+        new ObjectPrepareSystem().Update(world);
+        new LightPrepareSystem().Update(world);
 
         var scene = world.GetResource<GpuSceneData>();
         Assert.Equal(2, scene.DrawCount);
-        Assert.Equal(2, scene.DrawData.Length);
-        Assert.Equal(1, scene.DrawData[0].MaterialId);
-        Assert.Equal(2, scene.DrawData[1].MaterialId);
+        Assert.Equal(1, scene.GetDraw(0).MaterialId);
+        Assert.Equal(2, scene.GetDraw(1).MaterialId);
 
         Assert.Equal(256 * 2, objectBuffer.LastUpload.Length);
         var obj0 = MemoryMarshal.Read<ObjectData>(objectBuffer.LastUpload.AsSpan());

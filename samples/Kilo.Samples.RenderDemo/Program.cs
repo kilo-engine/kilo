@@ -672,7 +672,9 @@ public sealed class RenderDemoPlugin : IKiloPlugin
         app.AddSystem(KiloStage.PostUpdate, new SkinnedMeshPrepareSystem().Update);
         app.AddSystem(KiloStage.First, new CameraSystem().Update);
         app.AddSystem(KiloStage.PostUpdate, new FrustumCullingSystem().Update);
-        app.AddSystem(KiloStage.PostUpdate, new PrepareGpuSceneSystem().Update);
+        app.AddSystem(KiloStage.PostUpdate, new CameraPrepareSystem().Update);
+        app.AddSystem(KiloStage.PostUpdate, new ObjectPrepareSystem().Update);
+        app.AddSystem(KiloStage.PostUpdate, new LightPrepareSystem().Update);
 
         app.AddSystem(KiloStage.Last, new BeginFrameSystem().Update);
         app.AddSystem(KiloStage.Last, new ShadowMapSystem().Update);
@@ -1175,7 +1177,7 @@ public sealed class BlurRenderSystem
 
             for (int i = 0; i < scene.DrawCount; i++)
             {
-                var draw = scene.DrawData[i];
+                var draw = scene.GetDraw(i);
                 if (draw.MeshHandle < 0 || draw.MeshHandle >= context.Meshes.Count) continue;
                 if (draw.MaterialId < 0 || draw.MaterialId >= context.Materials.Count) continue;
 

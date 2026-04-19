@@ -13,14 +13,14 @@
     <Project Path="src/Kilo.ECS/Kilo.ECS.csproj" />
     <Project Path="src/Kilo.Rendering/Kilo.Rendering.csproj" />
     <Project Path="src/Kilo.Physics/Kilo.Physics.csproj" />
-    <Project Path="src/Kilo.Input/Kilo.Input.csproj" />
+    <Project Path="src/Kilo.Window/Kilo.Window.csproj" />
     <Project Path="src/Kilo.Assets/Kilo.Assets.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Kilo.ECS.Tests/Kilo.ECS.Tests.csproj" />
     <Project Path="tests/Kilo.Rendering.Tests/Kilo.Rendering.Tests.csproj" />
     <Project Path="tests/Kilo.Physics.Tests/Kilo.Physics.Tests.csproj" />
-    <Project Path="tests/Kilo.Input.Tests/Kilo.Input.Tests.csproj" />
+    <Project Path="tests/Kilo.Window.Tests/Kilo.Window.Tests.csproj" />
     <Project Path="tests/Kilo.Assets.Tests/Kilo.Assets.Tests.csproj" />
   </Folder>
 </Solution>

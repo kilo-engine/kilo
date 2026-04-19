@@ -28,7 +28,9 @@ public sealed class RenderingPlugin : IKiloPlugin
         app.AddSystem(KiloStage.PostUpdate, new LocalToWorldSystem().Update);
         app.AddSystem(KiloStage.First, new CameraSystem().Update);
         app.AddSystem(KiloStage.PostUpdate, new FrustumCullingSystem().Update);
-        app.AddSystem(KiloStage.PostUpdate, new PrepareGpuSceneSystem().Update);
+        app.AddSystem(KiloStage.PostUpdate, new CameraPrepareSystem().Update);
+        app.AddSystem(KiloStage.PostUpdate, new ObjectPrepareSystem().Update);
+        app.AddSystem(KiloStage.PostUpdate, new LightPrepareSystem().Update);
 
         app.AddSystem(KiloStage.Last, new BeginFrameSystem().Update);
         app.AddSystem(KiloStage.Last, new ShadowMapSystem().Update);
