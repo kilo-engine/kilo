@@ -8,6 +8,7 @@ public enum TextureViewDimension
     View2D,
     View2DArray,
     View3D,
+    ViewCube,
 }
 
 public sealed class TextureViewDescriptor

@@ -6,6 +6,7 @@ public static class ShadowShaders
     /// Depth-only shader for shadow map rendering.
     /// Uses the same ObjectData @group(1) but with a light-space CameraData @group(0).
     /// No fragment shader output — only writes depth.
+    /// Accepts tangent at location(3) to match the updated vertex layout.
     /// </summary>
     public const string WGSL = """
         struct CameraData {
@@ -30,7 +31,12 @@ public static class ShadowShaders
         @group(1) @binding(0) var<uniform> object: ObjectData;
 
         @vertex
-        fn vs_main(@location(0) position: vec3<f32>, @location(1) normal: vec3<f32>, @location(2) uv: vec2<f32>) -> @builtin(position) vec4<f32> {
+        fn vs_main(
+            @location(0) position: vec3<f32>,
+            @location(1) normal: vec3<f32>,
+            @location(2) uv: vec2<f32>,
+            @location(3) tangent: vec4<f32>
+        ) -> @builtin(position) vec4<f32> {
             let world_pos = object.model * vec4<f32>(position, 1.0);
             return camera.projection * camera.view * world_pos;
         }

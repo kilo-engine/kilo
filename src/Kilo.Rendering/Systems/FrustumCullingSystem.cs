@@ -8,7 +8,7 @@ namespace Kilo.Rendering;
 
 /// <summary>
 /// CPU-side view frustum culling. Adds/removes the <see cref="Culled"/> tag on entities.
-/// Runs in KiloStage.PostUpdate before PrepareGpuSceneSystem.
+/// Runs in KiloStage.PostUpdate before object/light prepare systems.
 /// </summary>
 public sealed class FrustumCullingSystem
 {

@@ -29,20 +29,21 @@ public sealed class TextureDescriptor : IEquatable<TextureDescriptor>
     public int MipLevelCount { get; init; } = 1;
     public int SampleCount { get; init; } = 1;
     public TextureUsage Usage { get; init; } = TextureUsage.RenderAttachment;
+    public int DepthOrArrayLayers { get; init; } = 1;
 
     public bool Equals(TextureDescriptor? other)
     {
         if (other is null) return false;
         return Width == other.Width && Height == other.Height && Format == other.Format
             && MipLevelCount == other.MipLevelCount && SampleCount == other.SampleCount
-            && Usage == other.Usage;
+            && Usage == other.Usage && DepthOrArrayLayers == other.DepthOrArrayLayers;
     }
 
     public override bool Equals(object? obj) => Equals(obj as TextureDescriptor);
 
     public override int GetHashCode()
     {
-        return HashCode.Combine(Width, Height, Format, MipLevelCount, SampleCount, Usage);
+        return HashCode.Combine(Width, Height, Format, MipLevelCount, SampleCount, Usage, DepthOrArrayLayers);
     }
 }
 

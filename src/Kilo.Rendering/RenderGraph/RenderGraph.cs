@@ -9,6 +9,7 @@ public sealed class RenderGraph : IDisposable
     private readonly Dictionary<int, object> _resourceDescriptors = [];
     private readonly Dictionary<int, object> _resolvedResources = [];
     private readonly Dictionary<string, RenderResourceHandle> _importedResources = [];
+    private readonly Dictionary<string, ITexture> _externalTextures = [];
     private readonly Dictionary<int, ITextureView> _textureViews = [];
     private readonly RenderGraphResourcePool _resourcePool = new();
     private int _nextHandleId;
@@ -58,6 +59,15 @@ public sealed class RenderGraph : IDisposable
 
     internal IBuffer GetResolvedBuffer(RenderResourceHandle handle)
         => (IBuffer)_resolvedResources[handle.Id];
+
+    /// <summary>
+    /// Registers an externally managed texture that can be imported by name in render passes.
+    /// The texture is resolved each frame during Execute().
+    /// </summary>
+    public void RegisterExternalTexture(string name, ITexture texture)
+    {
+        _externalTextures[name] = texture;
+    }
 
     internal ITexture GetResolvedTextureByName(string name)
     {
@@ -156,6 +166,15 @@ public sealed class RenderGraph : IDisposable
         {
             var swapchainTexture = driver.GetCurrentSwapchainTexture();
             _resolvedResources[backbufferHandle.Id] = swapchainTexture;
+        }
+
+        // Resolve other external textures registered via RegisterExternalTexture
+        foreach (var (name, texture) in _externalTextures)
+        {
+            if (_importedResources.TryGetValue(name, out var handle))
+            {
+                _resolvedResources[handle.Id] = texture;
+            }
         }
 
         using var encoder = driver.BeginCommandEncoding();
@@ -321,7 +340,4 @@ public sealed class RenderGraph : IDisposable
 
 internal static class RenderGraphExtensions
 {
-    // Accessor to get the graph from a pass builder without exposing it publicly
-    // This is a bit of a hack; we use reflection or keep it internal.
-    // Actually, we don't need this — PassBuilder already has access to the graph.
 }

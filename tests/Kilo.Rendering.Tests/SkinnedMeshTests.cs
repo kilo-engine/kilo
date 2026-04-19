@@ -1,9 +1,5 @@
 using Kilo.Rendering.Driver;
 using Kilo.Rendering.Meshes;
-using Kilo.Rendering.Materials;
-using Kilo.Rendering.Animation;
-using Kilo.Rendering.Text;
-using Kilo.Rendering.Scene;
 using Xunit;
 
 namespace Kilo.Rendering.Tests;
@@ -13,13 +9,13 @@ public class SkinnedMeshTests
     [Fact]
     public void SkinnedMesh_Layout_HasCorrectStride()
     {
-        Assert.Equal(64u, SkinnedMesh.Layout.ArrayStride);
+        Assert.Equal(80u, SkinnedMesh.Layout.ArrayStride);
     }
 
     [Fact]
-    public void SkinnedMesh_Layout_Has5Attributes()
+    public void SkinnedMesh_Layout_Has6Attributes()
     {
-        Assert.Equal(5, SkinnedMesh.Layout.Attributes.Length);
+        Assert.Equal(6, SkinnedMesh.Layout.Attributes.Length);
     }
 
     [Fact]
@@ -32,6 +28,7 @@ public class SkinnedMeshTests
         Assert.Equal(2, layout.Attributes[2].ShaderLocation);
         Assert.Equal(3, layout.Attributes[3].ShaderLocation);
         Assert.Equal(4, layout.Attributes[4].ShaderLocation);
+        Assert.Equal(5, layout.Attributes[5].ShaderLocation);
     }
 
     [Fact]
@@ -42,8 +39,9 @@ public class SkinnedMeshTests
         Assert.Equal(VertexFormat.Float32x3, layout.Attributes[0].Format);
         Assert.Equal(VertexFormat.Float32x3, layout.Attributes[1].Format);
         Assert.Equal(VertexFormat.Float32x2, layout.Attributes[2].Format);
-        Assert.Equal(VertexFormat.UInt32x4, layout.Attributes[3].Format);
-        Assert.Equal(VertexFormat.Float32x4, layout.Attributes[4].Format);
+        Assert.Equal(VertexFormat.Float32x4, layout.Attributes[3].Format);
+        Assert.Equal(VertexFormat.UInt32x4, layout.Attributes[4].Format);
+        Assert.Equal(VertexFormat.Float32x4, layout.Attributes[5].Format);
     }
 
     [Fact]
@@ -56,5 +54,6 @@ public class SkinnedMeshTests
         Assert.Equal(24u, layout.Attributes[2].Offset);
         Assert.Equal(32u, layout.Attributes[3].Offset);
         Assert.Equal(48u, layout.Attributes[4].Offset);
+        Assert.Equal(64u, layout.Attributes[5].Offset);
     }
 }

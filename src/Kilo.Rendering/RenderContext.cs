@@ -26,6 +26,7 @@ public sealed class RenderContext
     public int AddMesh(Mesh mesh) { _meshes.Add(mesh); return _meshes.Count - 1; }
     public int AddMaterial(Material material) { _materials.Add(material); return _materials.Count - 1; }
 
+    public SkyboxState Skybox { get; } = new();
     public ScreenshotState Screenshot { get; } = new();
     public SpriteRenderState Sprite { get; } = new();
 }

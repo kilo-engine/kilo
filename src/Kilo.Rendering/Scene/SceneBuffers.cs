@@ -47,5 +47,22 @@ internal static class SceneBuffers
 
         scene.ShadowSampler = shadowSampler;
         scene.ShadowDataBuffer = shadowDataBuffer;
+
+        // Persistent shadow depth texture (shared between ShadowMapSystem write and forward pass read)
+        const int ShadowMapSize = 2048;
+        var shadowDepthTexture = driver.CreateTexture(new TextureDescriptor
+        {
+            Width = ShadowMapSize,
+            Height = ShadowMapSize,
+            Format = DriverPixelFormat.Depth24Plus,
+            Usage = TextureUsage.RenderAttachment | TextureUsage.ShaderBinding,
+        });
+        scene.ShadowDepthTexture = shadowDepthTexture;
+        scene.ShadowDepthView = driver.CreateTextureView(shadowDepthTexture, new TextureViewDescriptor
+        {
+            Format = DriverPixelFormat.Depth24Plus,
+            Dimension = TextureViewDimension.View2D,
+            MipLevelCount = 1,
+        });
     }
 }

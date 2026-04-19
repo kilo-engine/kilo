@@ -80,12 +80,13 @@ public sealed class ShadowMapSystem
                 [
                     new VertexBufferLayout
                     {
-                        ArrayStride = 8 * sizeof(float),
+                        ArrayStride = 12 * sizeof(float),
                         Attributes =
                         [
                             new VertexAttributeDescriptor { ShaderLocation = 0, Format = VertexFormat.Float32x3, Offset = 0 },
                             new VertexAttributeDescriptor { ShaderLocation = 1, Format = VertexFormat.Float32x3, Offset = (nuint)(3 * sizeof(float)) },
                             new VertexAttributeDescriptor { ShaderLocation = 2, Format = VertexFormat.Float32x2, Offset = (nuint)(6 * sizeof(float)) },
+                            new VertexAttributeDescriptor { ShaderLocation = 3, Format = VertexFormat.Float32x4, Offset = (nuint)(8 * sizeof(float)) },
                         ]
                     }
                 ],
@@ -109,10 +110,11 @@ public sealed class ShadowMapSystem
         }
 
         // Upload light-space camera data
+        // Include Z remap in projection so shadow pass outputs clip-space Z in [0,1] for WebGPU
         var shadowCamData = new CameraData
         {
             View = lightView,
-            Projection = lightProj,
+            Projection = lightProj * remap,
             Position = lightPos,
         };
         var shadowCamArray = new CameraData[1];
@@ -132,7 +134,7 @@ public sealed class ShadowMapSystem
         var graph = context.RenderGraph;
         graph.AddPass("ShadowMap", setup: pass =>
         {
-            var shadowDepth = pass.CreateTexture(new TextureDescriptor
+            var shadowDepth = pass.ImportTexture("ShadowDepth", new TextureDescriptor
             {
                 Width = ShadowMapSize,
                 Height = ShadowMapSize,

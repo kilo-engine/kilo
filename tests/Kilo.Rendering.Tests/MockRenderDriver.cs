@@ -11,6 +11,7 @@ public sealed class MockTexture : ITexture
     public DriverPixelFormat Format { get; init; }
     public void Dispose() { }
     public void UploadData<T>(ReadOnlySpan<T> data) where T : unmanaged { }
+    public void UploadLayer<T>(ReadOnlySpan<T> data, int layer) where T : unmanaged { }
 }
 
 public sealed class MockTextureView : ITextureView

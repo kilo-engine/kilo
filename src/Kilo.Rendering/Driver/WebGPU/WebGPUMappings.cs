@@ -25,6 +25,7 @@ internal static class WebGPUMappings
         Kilo.Rendering.Driver.TextureViewDimension.View2D => Silk.NET.WebGPU.TextureViewDimension.Dimension2D,
         Kilo.Rendering.Driver.TextureViewDimension.View2DArray => Silk.NET.WebGPU.TextureViewDimension.Dimension2DArray,
         Kilo.Rendering.Driver.TextureViewDimension.View3D => Silk.NET.WebGPU.TextureViewDimension.Dimension3D,
+        Kilo.Rendering.Driver.TextureViewDimension.ViewCube => Silk.NET.WebGPU.TextureViewDimension.DimensionCube,
         _ => Silk.NET.WebGPU.TextureViewDimension.Dimension2D,
     };
 

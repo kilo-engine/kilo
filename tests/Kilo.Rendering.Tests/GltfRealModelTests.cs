@@ -209,8 +209,8 @@ public class GltfRealModelTests
             if (layout.ArrayStride == SkinnedMesh.BytesPerVertex)
             {
                 foundSkinnedLayout = true;
-                // Should have 5 attributes: pos, normal, uv, joints, weights
-                Assert.Equal(5, layout.Attributes.Length);
+                // Should have 6 attributes: pos, normal, uv, tangent, joints, weights
+                Assert.Equal(6, layout.Attributes.Length);
             }
         }
         Assert.True(foundSkinnedLayout, "Fox should have at least one primitive with skinned vertex layout");

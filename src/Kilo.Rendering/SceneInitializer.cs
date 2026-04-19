@@ -16,6 +16,7 @@ public static class SceneInitializer
     public static void Initialize(RenderContext context, GpuSceneData scene, IRenderDriver driver)
     {
         SceneBuffers.Create(scene, driver);
+        context.RenderGraph.RegisterExternalTexture("ShadowDepth", scene.ShadowDepthTexture!);
         BuiltinMeshes.CreateDefaultCube(context, driver);
         BuiltinMaterials.CreateDefaultMaterial(context, scene, driver);
         SpriteResources.Create(context, driver);

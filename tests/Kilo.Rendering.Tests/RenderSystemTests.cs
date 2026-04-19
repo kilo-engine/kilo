@@ -84,7 +84,7 @@ public class RenderSystemTests
             ObjectDataBuffer = driver.CreateBuffer(new RenderGraph.BufferDescriptor { Size = 1024, Usage = RenderGraph.BufferUsage.Uniform }),
             LightBuffer = driver.CreateBuffer(new RenderGraph.BufferDescriptor { Size = 1024, Usage = RenderGraph.BufferUsage.Uniform }),
         };
-        scene.SetDrawData([new DrawData { MeshHandle = 0, MaterialId = 0 }], 1);
+        scene.SetDrawData([new DrawData { MeshHandle = 0, MaterialId = 0 }], 1, 1);
         world.AddResource(scene);
 
         var system = new RenderSystem();

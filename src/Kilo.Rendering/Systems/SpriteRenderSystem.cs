@@ -29,24 +29,17 @@ public struct SpriteInstanceData
 
 public sealed class SpriteRenderSystem
 {
-    private static int _logFrame;
-
     public void Update(KiloWorld world)
     {
         var context = world.GetResource<RenderContext>();
         var driver = context.Driver;
         var windowSize = world.GetResource<WindowSize>();
 
-        _logFrame++;
-        bool shouldLog = _logFrame <= 3;
-
         // Orthographic projection
         float aspect = (float)windowSize.Width / windowSize.Height;
-        float halfH = 5f;
-        float halfW = halfH * aspect;
-        var projection = Matrix4x4.CreateOrthographicOffCenter(-halfW, halfW, -halfH, halfH, -1f, 1f);
-
-        if (shouldLog) Console.WriteLine($"[SpriteRender] Frame {_logFrame}: aspect={aspect:F2}");
+        const float HalfHeight = 5f;
+        float halfW = HalfHeight * aspect;
+        var projection = Matrix4x4.CreateOrthographicOffCenter(-halfW, halfW, -HalfHeight, HalfHeight, -1f, 1f);
 
         // Collect sprites
         var query = world.QueryBuilder()
@@ -123,12 +116,7 @@ public sealed class SpriteRenderSystem
                 uint offset = (uint)(i * UniformAlign);
                 encoder.SetBindingSet(0, context.Sprite.BindingSet!, offset);
                 encoder.DrawIndexed(6);
-
-                if (shouldLog && i < 3)
-                    Console.WriteLine($"[SpriteRender]   Sprite {i}: offset={offset}");
             }
         });
-
-        if (shouldLog) Console.WriteLine($"[SpriteRender] Total drawn: {totalDrawn}");
     }
 }

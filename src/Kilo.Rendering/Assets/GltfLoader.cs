@@ -120,7 +120,6 @@ public static class GltfLoader
             }
         }
 
-        Console.WriteLine($"[GltfLoader] Loaded {result.Primitives.Count} primitives, Skinned={result.IsSkinned}");
         return result;
     }
 }

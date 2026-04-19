@@ -34,6 +34,7 @@ public sealed class RenderingPlugin : IKiloPlugin
 
         app.AddSystem(KiloStage.Last, new BeginFrameSystem().Update);
         app.AddSystem(KiloStage.Last, new ShadowMapSystem().Update);
+        app.AddSystem(KiloStage.Last, new SkyboxRenderSystem().Update);
         app.AddSystem(KiloStage.Last, new RenderSystem().Update);
         app.AddSystem(KiloStage.Last, new SpriteRenderSystem().Update);
         app.AddSystem(KiloStage.Last, new TextRenderSystem().Update);

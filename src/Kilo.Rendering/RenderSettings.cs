@@ -15,4 +15,7 @@ public sealed class RenderSettings
     public string Title { get; set; } = "Kilo Engine";
     public bool VSync { get; set; } = true;
     public GraphicsBackend Backend { get; set; } = GraphicsBackend.WebGPU;
+
+    /// <summary>Optional cubemap face paths for skybox (order: +X, -X, +Y, -Y, +Z, -Z). Null = procedural gradient.</summary>
+    public string[]? SkyboxFacePaths { get; set; }
 }

@@ -1,126 +1,22 @@
+using System.Numerics;
 using Kilo.Rendering.Driver;
-using Kilo.Rendering.RenderGraph;
 using Kilo.Rendering.Scene;
-using Kilo.Rendering.Shaders;
 
 namespace Kilo.Rendering.Materials;
 
 internal static class BuiltinMaterials
 {
     /// <summary>
-    /// Creates the default BasicLit material with shadow support.
+    /// Creates the default BasicLit material via MaterialManager.
+    /// All binding set details are centralized in MaterialManager — no duplication here.
     /// </summary>
     public static void CreateDefaultMaterial(RenderContext context, GpuSceneData scene, IRenderDriver driver)
     {
-        var basicLitVertexShader = context.ShaderCache.GetOrCreateShader(driver, BasicLitShaders.WGSL, "vs_main");
-        var basicLitFragmentShader = context.ShaderCache.GetOrCreateShader(driver, BasicLitShaders.WGSL, "fs_main");
-
-        var swapchainFormat = driver.SwapchainFormat;
-        var cubeMesh = context.Meshes[0];
-
-        var basicLitPipelineKey = new PipelineCacheKey
+        context.MaterialManager.CreateMaterial(context, scene, new MaterialDescriptor
         {
-            VertexShaderSource = BasicLitShaders.WGSL,
-            VertexShaderEntryPoint = "vs_main",
-            FragmentShaderSource = BasicLitShaders.WGSL,
-            FragmentShaderEntryPoint = "fs_main",
-            Topology = DriverPrimitiveTopology.TriangleList,
-            SampleCount = 1,
-            VertexBuffers = cubeMesh.Layouts,
-            ColorTargets =
-            [
-                new ColorTargetDescriptor
-                {
-                    Format = swapchainFormat,
-                }
-            ],
-            DepthStencil = new DepthStencilStateDescriptor
-            {
-                Format = DriverPixelFormat.Depth24Plus,
-                DepthCompare = DriverCompareFunction.Less,
-                DepthWriteEnabled = true,
-            }
-        };
-
-        var basicLitPipeline = context.PipelineCache.GetOrCreate(driver, basicLitPipelineKey, () => driver.CreateRenderPipelineWithDynamicUniforms(new RenderPipelineDescriptor
-        {
-            VertexShader = basicLitVertexShader,
-            FragmentShader = basicLitFragmentShader,
-            Topology = DriverPrimitiveTopology.TriangleList,
-            ColorTargets = basicLitPipelineKey.ColorTargets,
-            VertexBuffers = cubeMesh.Layouts,
-            DepthStencil = basicLitPipelineKey.DepthStencil,
-        }, (nuint)ObjectData.Size, groupIndex: 1, bindGroupCount: 4));
-
-        var cameraBindingSet = driver.CreateBindingSetForPipeline(basicLitPipeline, 0, [new UniformBufferBinding { Buffer = scene.CameraBuffer, Binding = 0 }]);
-        var objectBindingSet = driver.CreateDynamicUniformBindingSet(basicLitPipeline, 1, scene.ObjectDataBuffer, (nuint)ObjectData.Size);
-        var lightBindingSet = driver.CreateBindingSetForPipeline(basicLitPipeline, 2, [new UniformBufferBinding { Buffer = scene.LightBuffer, Binding = 0 }]);
-
-        // Default white 1x1 texture
-        var defaultTexture = driver.CreateTexture(new TextureDescriptor
-        {
-            Width = 1,
-            Height = 1,
-            Format = DriverPixelFormat.RGBA8Unorm,
-            Usage = TextureUsage.CopyDst | TextureUsage.ShaderBinding,
-            MipLevelCount = 1,
-            SampleCount = 1,
+            BaseColor = Vector4.One,
+            Metallic = 0.0f,
+            Roughness = 0.5f,
         });
-        defaultTexture.UploadData<byte>([255, 255, 255, 255]);
-
-        var defaultTextureView = driver.CreateTextureView(defaultTexture, new TextureViewDescriptor
-        {
-            Format = DriverPixelFormat.RGBA8Unorm,
-            Dimension = TextureViewDimension.View2D,
-            MipLevelCount = 1,
-        });
-
-        var defaultSampler = driver.CreateSampler(new SamplerDescriptor
-        {
-            MinFilter = FilterMode.Linear,
-            MagFilter = FilterMode.Linear,
-            MipFilter = FilterMode.Linear,
-            AddressModeU = WrapMode.Repeat,
-            AddressModeV = WrapMode.Repeat,
-            AddressModeW = WrapMode.Repeat,
-        });
-
-        // Shadow resources (created by SceneBuffers)
-        var shadowSampler = scene.ShadowSampler!;
-        var shadowDataBuffer = scene.ShadowDataBuffer!;
-
-        var placeholderDepthTexture = driver.CreateTexture(new TextureDescriptor
-        {
-            Width = 1, Height = 1,
-            Format = DriverPixelFormat.Depth24Plus,
-            Usage = TextureUsage.ShaderBinding,
-        });
-        var placeholderDepthView = driver.CreateTextureView(placeholderDepthTexture, new TextureViewDescriptor
-        {
-            Format = DriverPixelFormat.Depth24Plus,
-            Dimension = TextureViewDimension.View2D,
-            MipLevelCount = 1,
-        });
-
-        var textureBindingSet = driver.CreateBindingSetForPipeline(basicLitPipeline, 3,
-            [new UniformBufferBinding { Buffer = shadowDataBuffer, Binding = 4 }],
-            [
-                new TextureBinding { Binding = 0, TextureView = defaultTextureView },
-                new TextureBinding { Binding = 2, TextureView = placeholderDepthView },
-            ],
-            [
-                new SamplerBinding { Binding = 1, Sampler = defaultSampler },
-                new SamplerBinding { Binding = 3, Sampler = shadowSampler },
-            ]);
-
-        var basicLitMaterial = new Material
-        {
-            Pipeline = basicLitPipeline,
-            BindingSets = [cameraBindingSet, objectBindingSet, lightBindingSet, textureBindingSet],
-            AlbedoTexture = defaultTexture,
-            AlbedoSampler = defaultSampler,
-        };
-
-        context.AddMaterial(basicLitMaterial);
     }
 }

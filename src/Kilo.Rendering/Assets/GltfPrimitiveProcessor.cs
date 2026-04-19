@@ -12,6 +12,10 @@ namespace Kilo.Rendering.Assets;
 /// </summary>
 internal static class GltfPrimitiveProcessor
 {
+    // Static vertex format: pos(3) + normal(3) + uv(2) + tangent(4) = 12 floats = 48 bytes
+    private const int StaticFloatsPerVertex = 12;
+    private const int StaticBytesPerVertex = 48;
+
     public static (int meshHandle, int materialHandle) LoadPrimitive(
         SharpGLTF.Schema2.MeshPrimitive primitive,
         IRenderDriver driver,
@@ -45,20 +49,32 @@ internal static class GltfPrimitiveProcessor
         var uvAccessor = primitive.GetVertexAccessor("TEXCOORD_0");
         var uvs = uvAccessor?.AsVector2Array();
 
+        // Tangent data
+        var tangentAccessor = primitive.GetVertexAccessor("TANGENT");
+        var gltfTangents = tangentAccessor?.AsVector4Array();
+        Vector4[]? computedTangents = null;
+        if (gltfTangents == null)
+        {
+            var resolvedNormals = normals ?? (IReadOnlyList<Vector3>)generatedNormals!;
+            var resolvedUvs = uvs ?? (IReadOnlyList<Vector2>)(new Vector2[vertexCount]);
+            var indices = primitive.GetIndices()?.ToArray();
+            computedTangents = GenerateTangents(positions, resolvedNormals, resolvedUvs, indices);
+        }
+
         // Check for skinning attributes
         var jointsAccessor = primitive.GetVertexAccessor("JOINTS_0");
         var weightsAccessor = primitive.GetVertexAccessor("WEIGHTS_0");
         bool hasSkinning = jointsAccessor != null && weightsAccessor != null;
 
         // If the model is skinned but this primitive lacks skinning data,
-        // we must still output 64-byte vertices (pad with dummy joints/weights)
+        // we must still output skinned-format vertices (pad with dummy joints/weights)
         bool needsSkinningFormat = hasSkinning || result.IsSkinned;
 
         byte[] vertexData;
 
         if (hasSkinning)
         {
-            // Skinned vertex format: pos(12) + normal(12) + uv(8) + joints(16) + weights(16) = 64 bytes
+            // Skinned: pos(12) + normal(12) + uv(8) + tangent(16) + joints(16) + weights(16) = 80 bytes
             vertexData = new byte[vertexCount * SkinnedMesh.BytesPerVertex];
             var joints = jointsAccessor!.AsVector4Array();
             var weights = weightsAccessor!.AsVector4Array();
@@ -67,130 +83,87 @@ internal static class GltfPrimitiveProcessor
             {
                 int off = i * SkinnedMesh.BytesPerVertex;
 
-                // Position (3 floats, 12 bytes)
+                // Position (12)
                 var p = positions[i];
                 System.Buffer.BlockCopy(new[] { p.X, p.Y, p.Z }, 0, vertexData, off, 12);
 
-                // Normal (3 floats, 12 bytes)
-                if (normals != null && i < normals.Count)
-                {
-                    var n = normals[i];
-                    System.Buffer.BlockCopy(new[] { n.X, n.Y, n.Z }, 0, vertexData, off + 12, 12);
-                }
-                else if (generatedNormals != null)
-                {
-                    var n = generatedNormals[i];
-                    System.Buffer.BlockCopy(new[] { n.X, n.Y, n.Z }, 0, vertexData, off + 12, 12);
-                }
+                // Normal (12)
+                WriteNormal(vertexData, off + 12, normals, generatedNormals, i);
 
-                // UV (2 floats, 8 bytes) — glTF UV origin is top-left, same as WebGPU
-                if (uvs != null && i < uvs.Count)
-                {
-                    var uv = uvs[i];
-                    System.Buffer.BlockCopy(new[] { uv.X, uv.Y }, 0, vertexData, off + 24, 8);
-                }
+                // UV (8)
+                WriteUv(vertexData, off + 24, uvs, i);
 
-                // Joints (4 uints, 16 bytes)
+                // Tangent (16) — vec4 (xyz = direction, w = handedness)
+                WriteTangentVec4(vertexData, off + 32, gltfTangents, computedTangents, i);
+
+                // Joints (16)
                 if (i < joints.Count)
                 {
                     var j = joints[i];
                     uint[] jointIndices = { (uint)j.X, (uint)j.Y, (uint)j.Z, (uint)j.W };
                     for (int k = 0; k < 4; k++)
-                        BitConverter.GetBytes(jointIndices[k]).CopyTo(vertexData, off + 32 + k * 4);
+                        BitConverter.GetBytes(jointIndices[k]).CopyTo(vertexData, off + 48 + k * 4);
                 }
 
-                // Weights (4 floats, 16 bytes)
+                // Weights (16)
                 if (i < weights.Count)
                 {
                     var w = weights[i];
-                    System.Buffer.BlockCopy(new[] { w.X, w.Y, w.Z, w.W }, 0, vertexData, off + 48, 16);
+                    System.Buffer.BlockCopy(new[] { w.X, w.Y, w.Z, w.W }, 0, vertexData, off + 64, 16);
                 }
             }
-
-            Console.WriteLine($"[GltfPrimitiveProcessor] Skinned primitive: {vertexCount} verts, joints accessor count={joints.Count}");
         }
         else if (needsSkinningFormat)
         {
-            // Static primitive in a skinned model: use 64-byte format with dummy joints/weights
+            // Static primitive in a skinned model: use 80-byte format with dummy joints/weights
             vertexData = new byte[vertexCount * SkinnedMesh.BytesPerVertex];
 
             for (int i = 0; i < vertexCount; i++)
             {
                 int off = i * SkinnedMesh.BytesPerVertex;
 
-                // Position (3 floats, 12 bytes)
                 var p = positions[i];
                 System.Buffer.BlockCopy(new[] { p.X, p.Y, p.Z }, 0, vertexData, off, 12);
 
-                // Normal (3 floats, 12 bytes)
-                if (normals != null && i < normals.Count)
-                {
-                    var n = normals[i];
-                    System.Buffer.BlockCopy(new[] { n.X, n.Y, n.Z }, 0, vertexData, off + 12, 12);
-                }
-                else if (generatedNormals != null)
-                {
-                    var n = generatedNormals[i];
-                    System.Buffer.BlockCopy(new[] { n.X, n.Y, n.Z }, 0, vertexData, off + 12, 12);
-                }
+                WriteNormal(vertexData, off + 12, normals, generatedNormals, i);
+                WriteUv(vertexData, off + 24, uvs, i);
+                WriteTangentVec4(vertexData, off + 32, gltfTangents, computedTangents, i);
 
-                // UV (2 floats, 8 bytes) — glTF UV origin is top-left, same as WebGPU
-                if (uvs != null && i < uvs.Count)
-                {
-                    var uv = uvs[i];
-                    System.Buffer.BlockCopy(new[] { uv.X, uv.Y }, 0, vertexData, off + 24, 8);
-                }
-
-                // Dummy joints (4 uints = 0,0,0,0) — bytes 32-47 already zero
-                // Dummy weights (1,0,0,0) — full weight to joint 0
-                System.Buffer.BlockCopy(new[] { 1f, 0f, 0f, 0f }, 0, vertexData, off + 48, 16);
+                // Dummy joints (0,0,0,0) — already zero
+                // Dummy weights (1,0,0,0)
+                System.Buffer.BlockCopy(new[] { 1f, 0f, 0f, 0f }, 0, vertexData, off + 64, 16);
             }
-
-            Console.WriteLine($"[GltfPrimitiveProcessor] Static-in-skinned primitive: {vertexCount} verts (padded to 64-byte)");
         }
         else
         {
-            // Static vertex format: pos(3) + normal(3) + uv(2) = 8 floats = 32 bytes
-            int floatsPerVertex = 8;
-            var vertices = new float[vertexCount * floatsPerVertex];
+            // Static: pos(3) + normal(3) + uv(2) + tangent(4) = 12 floats = 48 bytes
+            var vertices = new float[vertexCount * StaticFloatsPerVertex];
 
             for (int i = 0; i < vertexCount; i++)
             {
-                int off = i * floatsPerVertex;
+                int off = i * StaticFloatsPerVertex;
                 var p = positions[i];
                 vertices[off + 0] = p.X;
                 vertices[off + 1] = p.Y;
                 vertices[off + 2] = p.Z;
 
-                if (normals != null && i < normals.Count)
-                {
-                    var n = normals[i];
-                    vertices[off + 3] = n.X;
-                    vertices[off + 4] = n.Y;
-                    vertices[off + 5] = n.Z;
-                }
-                else if (generatedNormals != null)
-                {
-                    var n = generatedNormals[i];
-                    vertices[off + 3] = n.X;
-                    vertices[off + 4] = n.Y;
-                    vertices[off + 5] = n.Z;
-                }
+                WriteNormalFloats(vertices, off + 3, normals, generatedNormals, i);
 
                 if (uvs != null && i < uvs.Count)
                 {
-                    var uv = uvs[i];
-                    vertices[off + 6] = uv.X;
-                    vertices[off + 7] = uv.Y;
+                    vertices[off + 6] = uvs[i].X;
+                    vertices[off + 7] = uvs[i].Y;
                 }
+
+                // Tangent vec4
+                WriteTangentFloats(vertices, off + 8, gltfTangents, computedTangents, i);
             }
 
-            // Convert to byte array
             vertexData = new byte[vertices.Length * sizeof(float)];
             System.Buffer.BlockCopy(vertices, 0, vertexData, 0, vertexData.Length);
         }
 
-        // Index data — some models use non-indexed drawing (e.g. Fox.glb)
+        // Index data
         var indexList = primitive.GetIndices();
         uint[] indexData;
         if (indexList != null)
@@ -199,7 +172,6 @@ internal static class GltfPrimitiveProcessor
         }
         else
         {
-            // Generate sequential indices for non-indexed primitives
             indexData = new uint[vertexCount];
             for (int i = 0; i < vertexCount; i++)
                 indexData[i] = (uint)i;
@@ -227,30 +199,29 @@ internal static class GltfPrimitiveProcessor
             IndexCount = (uint)indexData.Length,
             Layouts = [needsSkinningFormat ? SkinnedMesh.Layout : new VertexBufferLayout
             {
-                ArrayStride = 32,
+                ArrayStride = StaticBytesPerVertex,
                 Attributes =
                 [
                     new VertexAttributeDescriptor { ShaderLocation = 0, Format = VertexFormat.Float32x3, Offset = 0 },
                     new VertexAttributeDescriptor { ShaderLocation = 1, Format = VertexFormat.Float32x3, Offset = 12 },
                     new VertexAttributeDescriptor { ShaderLocation = 2, Format = VertexFormat.Float32x2, Offset = 24 },
+                    new VertexAttributeDescriptor { ShaderLocation = 3, Format = VertexFormat.Float32x4, Offset = 32 },
                 ]
             }]
         };
 
         int meshHandle = context.AddMesh(mesh);
 
-        // Create material from GLTF material
+        // Create material from GLTF material with PBR properties
         var matDescriptor = new MaterialDescriptor { BaseColor = Vector4.One };
 
         var gltfMaterial = primitive.Material;
         var baseColorChannel = gltfMaterial?.FindChannel("BaseColor");
         if (baseColorChannel.HasValue)
         {
-            // Apply base color factor
             var color = baseColorChannel.Value.Parameter;
-            matDescriptor = new MaterialDescriptor { BaseColor = new Vector4(color.X, color.Y, color.Z, color.W) };
+            string? albedoPath = null;
 
-            // Extract texture if present
             var tex = baseColorChannel.Value.Texture;
             if (tex != null)
             {
@@ -258,19 +229,33 @@ internal static class GltfPrimitiveProcessor
                 var content = img.Content;
                 if (content.IsValid && !content.IsEmpty)
                 {
-                    // Fix: ensure the extension matches the content format
                     var ext = content.FileExtension ?? ".png";
-                    // Ensure extension starts with dot
                     if (!ext.StartsWith('.')) ext = "." + ext;
                     var tempPath = Path.Combine(Path.GetTempPath(), $"gltf_albedo_{img.LogicalIndex}{ext}");
                     content.SaveToFile(tempPath);
-                    matDescriptor = new MaterialDescriptor
-                    {
-                        BaseColor = new Vector4(color.X, color.Y, color.Z, color.W),
-                        AlbedoTexturePath = tempPath,
-                    };
+                    albedoPath = tempPath;
                 }
             }
+
+            matDescriptor = new MaterialDescriptor
+            {
+                BaseColor = new Vector4(color.X, color.Y, color.Z, color.W),
+                AlbedoTexturePath = albedoPath,
+            };
+        }
+
+        // Extract PBR metallic-roughness
+        var mrChannel = gltfMaterial?.FindChannel("MetallicRoughness");
+        if (mrChannel.HasValue)
+        {
+            var param = mrChannel.Value.Parameter;
+            matDescriptor = new MaterialDescriptor
+            {
+                BaseColor = matDescriptor.BaseColor,
+                AlbedoTexturePath = matDescriptor.AlbedoTexturePath,
+                Metallic = param.X,    // glTF: X = metallic factor
+                Roughness = param.Y,   // glTF: Y = roughness factor
+            };
         }
 
         int materialHandle = context.MaterialManager.CreateMaterial(context, scene, matDescriptor);
@@ -278,9 +263,156 @@ internal static class GltfPrimitiveProcessor
         return (meshHandle, materialHandle);
     }
 
+    // ---- Vertex data helpers ----
+
+    private static void WriteNormal(byte[] data, int offset,
+        IReadOnlyList<Vector3>? normals, Vector3[]? generated, int index)
+    {
+        Vector3 n;
+        if (normals != null && index < normals.Count) n = normals[index];
+        else if (generated != null) n = generated[index];
+        else return;
+        System.Buffer.BlockCopy(new[] { n.X, n.Y, n.Z }, 0, data, offset, 12);
+    }
+
+    private static void WriteNormalFloats(float[] data, int offset,
+        IReadOnlyList<Vector3>? normals, Vector3[]? generated, int index)
+    {
+        Vector3 n;
+        if (normals != null && index < normals.Count) n = normals[index];
+        else if (generated != null) n = generated[index];
+        else return;
+        data[offset + 0] = n.X;
+        data[offset + 1] = n.Y;
+        data[offset + 2] = n.Z;
+    }
+
+    private static void WriteUv(byte[] data, int offset, IReadOnlyList<Vector2>? uvs, int index)
+    {
+        if (uvs != null && index < uvs.Count)
+        {
+            var uv = uvs[index];
+            System.Buffer.BlockCopy(new[] { uv.X, uv.Y }, 0, data, offset, 8);
+        }
+    }
+
+    private static void WriteTangentVec4(byte[] data, int offset,
+        IReadOnlyList<Vector4>? gltfTangents, Vector4[]? computed, int index)
+    {
+        Vector4 t;
+        if (gltfTangents != null && index < gltfTangents.Count)
+            t = gltfTangents[index]; // xyz = tangent dir, w = handedness
+        else if (computed != null)
+            t = computed[index];
+        else
+            t = new Vector4(1, 0, 0, 1); // default tangent
+        System.Buffer.BlockCopy(new[] { t.X, t.Y, t.Z, t.W }, 0, data, offset, 16);
+    }
+
+    private static void WriteTangentFloats(float[] data, int offset,
+        IReadOnlyList<Vector4>? gltfTangents, Vector4[]? computed, int index)
+    {
+        Vector4 t;
+        if (gltfTangents != null && index < gltfTangents.Count)
+            t = gltfTangents[index];
+        else if (computed != null)
+            t = computed[index];
+        else
+            t = new Vector4(1, 0, 0, 1);
+        data[offset + 0] = t.X;
+        data[offset + 1] = t.Y;
+        data[offset + 2] = t.Z;
+        data[offset + 3] = t.W;
+    }
+
+    // ---- Tangent generation ----
+
+    /// <summary>
+    /// Generates tangents using the Lengyel algorithm when glTF data lacks TANGENT attribute.
+    /// </summary>
+    public static Vector4[] GenerateTangents(
+        IReadOnlyList<Vector3> positions,
+        IReadOnlyList<Vector3> normals,
+        IReadOnlyList<Vector2> uvs,
+        uint[]? indices)
+    {
+        int vertexCount = positions.Count;
+        var tangentAccum = new Vector3[vertexCount];
+        var bitangentAccum = new Vector3[vertexCount];
+
+        void processTriangle(int i0, int i1, int i2)
+        {
+            var p0 = positions[i0];
+            var p1 = positions[i1];
+            var p2 = positions[i2];
+
+            var uv0 = i0 < uvs.Count ? uvs[i0] : Vector2.Zero;
+            var uv1 = i1 < uvs.Count ? uvs[i1] : Vector2.Zero;
+            var uv2 = i2 < uvs.Count ? uvs[i2] : Vector2.Zero;
+
+            var dp1 = p1 - p0;
+            var dp2 = p2 - p0;
+            var duv1 = uv1 - uv0;
+            var duv2 = uv2 - uv0;
+
+            float det = duv1.X * duv2.Y - duv2.X * duv1.Y;
+            if (Math.Abs(det) < 1e-6f) return;
+
+            float r = 1.0f / det;
+            var tangent = new Vector3(
+                (dp1.X * duv2.Y - dp2.X * duv1.Y) * r,
+                (dp1.Y * duv2.Y - dp2.Y * duv1.Y) * r,
+                (dp1.Z * duv2.Y - dp2.Z * duv1.Y) * r);
+            var bitangent = new Vector3(
+                (dp2.X * duv1.X - dp1.X * duv2.X) * r,
+                (dp2.Y * duv1.X - dp1.Y * duv2.X) * r,
+                (dp2.Z * duv1.X - dp1.Z * duv2.X) * r);
+
+            tangentAccum[i0] += tangent;
+            tangentAccum[i1] += tangent;
+            tangentAccum[i2] += tangent;
+            bitangentAccum[i0] += bitangent;
+            bitangentAccum[i1] += bitangent;
+            bitangentAccum[i2] += bitangent;
+        }
+
+        if (indices != null)
+        {
+            for (int i = 0; i + 2 < indices.Length; i += 3)
+                processTriangle((int)indices[i], (int)indices[i + 1], (int)indices[i + 2]);
+        }
+        else
+        {
+            for (int i = 0; i + 2 < vertexCount; i += 3)
+                processTriangle(i, i + 1, i + 2);
+        }
+
+        var tangents = new Vector4[vertexCount];
+        for (int i = 0; i < vertexCount; i++)
+        {
+            var n = i < normals.Count ? normals[i] : Vector3.UnitZ;
+            var t = tangentAccum[i];
+            // Orthogonalize tangent against normal
+            t -= n * Vector3.Dot(n, t);
+            float len = t.Length();
+            if (len > 1e-6f)
+            {
+                t /= len;
+                // Handedness from cross product sign
+                float handedness = Vector3.Dot(Vector3.Cross(n, t), bitangentAccum[i]) < 0 ? -1.0f : 1.0f;
+                tangents[i] = new Vector4(t, handedness);
+            }
+            else
+            {
+                tangents[i] = new Vector4(1, 0, 0, 1);
+            }
+        }
+
+        return tangents;
+    }
+
     /// <summary>
     /// Generates flat (per-face) normals for primitives that lack a NORMAL attribute.
-    /// Works with both indexed and non-indexed triangle lists.
     /// </summary>
     public static Vector3[] GenerateFlatNormals(
         IReadOnlyList<Vector3> positions,
@@ -305,7 +437,6 @@ internal static class GltfPrimitiveProcessor
         }
         else
         {
-            // Non-indexed: every 3 consecutive vertices form a triangle
             for (int i = 0; i + 2 < positions.Count; i += 3)
             {
                 var v0 = positions[i];

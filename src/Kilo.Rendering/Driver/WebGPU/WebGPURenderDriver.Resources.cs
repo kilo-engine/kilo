@@ -15,12 +15,13 @@ public sealed unsafe partial class WebGPURenderDriver
 
     public ITexture CreateTexture(RgTextureDescriptor descriptor)
     {
+        bool isCube = descriptor.DepthOrArrayLayers == 6;
         var desc = new Silk.NET.WebGPU.TextureDescriptor
         {
-            Size = new Extent3D { Width = (uint)descriptor.Width, Height = (uint)descriptor.Height, DepthOrArrayLayers = 1 },
+            Size = new Extent3D { Width = (uint)descriptor.Width, Height = (uint)descriptor.Height, DepthOrArrayLayers = (uint)descriptor.DepthOrArrayLayers },
             MipLevelCount = (uint)descriptor.MipLevelCount,
             SampleCount = (uint)descriptor.SampleCount,
-            Dimension = TextureDimension.Dimension2D,
+            Dimension = isCube ? TextureDimension.Dimension2D : TextureDimension.Dimension2D,
             Format = WebGPUMappings.MapPixelFormat(descriptor.Format),
             Usage = WebGPUMappings.MapTextureUsage(descriptor.Usage),
         };
@@ -42,11 +43,10 @@ public sealed unsafe partial class WebGPURenderDriver
             BaseMipLevel = (uint)descriptor.BaseMipLevel,
             MipLevelCount = (uint)descriptor.MipLevelCount,
             BaseArrayLayer = 0,
-            ArrayLayerCount = 1,
+            ArrayLayerCount = descriptor.Dimension == TextureViewDimension.ViewCube ? 6u : 1u,
             Aspect = isDepthFormat ? TextureAspect.DepthOnly : TextureAspect.All,
         };
         var view = Wgpu.TextureCreateView(wgpuTexture.NativePtr, in viewDesc);
-        Console.WriteLine($"[WebGPU DEBUG] CreateTextureView: fmt={descriptor.Format} -> mapped={mappedFormat}, isDepth={isDepthFormat}, viewPtr={(nint)view}, texPtr={(nint)wgpuTexture.NativePtr}");
         return new WebGPUTextureView(Wgpu, view);
     }
 

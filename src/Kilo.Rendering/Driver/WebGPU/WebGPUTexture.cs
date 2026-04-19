@@ -39,6 +39,9 @@ public sealed unsafe class WebGPUTexture : ITexture
     }
 
     public void UploadData<T>(ReadOnlySpan<T> data) where T : unmanaged
+        => UploadLayer(data, 0);
+
+    public void UploadLayer<T>(ReadOnlySpan<T> data, int layer) where T : unmanaged
     {
         if (_device == null)
             throw new InvalidOperationException("Texture does not support upload (no device reference).");
@@ -58,7 +61,7 @@ public sealed unsafe class WebGPUTexture : ITexture
         {
             Texture = _texture,
             MipLevel = 0,
-            Origin = new Origin3D { X = 0, Y = 0, Z = 0 },
+            Origin = new Origin3D { X = 0, Y = 0, Z = (uint)layer },
             Aspect = TextureAspect.All,
         };
 

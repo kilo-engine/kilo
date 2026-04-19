@@ -83,20 +83,11 @@ internal static class GltfSkeletonLoader
                         * Matrix4x4.CreateFromQuaternion(node.LocalTransform.Rotation)
                         * Matrix4x4.CreateTranslation(node.LocalTransform.Translation);
                     ancestorChain = ancestorChain * local;
-                    Console.WriteLine($"[GltfSkeletonLoader] Ancestor: {node.Name} T={node.LocalTransform.Translation} S={node.LocalTransform.Scale}");
                 }
                 node = node.VisualParent;
             }
             skeletonData.AncestorCorrection = ancestorChain;
             break;
-        }
-
-        // Diagnostic: print joint hierarchy
-        Console.WriteLine($"[GltfSkeletonLoader] Skeleton: {jointCount} joints, AncestorCorrection={skeletonData.AncestorCorrection == Matrix4x4.Identity}");
-        for (int i = 0; i < Math.Min(jointCount, 10); i++)
-        {
-            var j = skeletonData.Joints[i];
-            Console.WriteLine($"  Joint {i}: {j.Name} parent={j.ParentIndex} pos=({j.RestPosition.X:F2},{j.RestPosition.Y:F2},{j.RestPosition.Z:F2})");
         }
 
         return skeletonData;

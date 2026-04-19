@@ -2,14 +2,13 @@ using System.Numerics;
 using Kilo.ECS;
 using Kilo.Rendering.Driver;
 using Kilo.Rendering.RenderGraph;
-using Kilo.Rendering.Meshes;
-using Kilo.Rendering.Materials;
 using Kilo.Rendering.Scene;
 
 namespace Kilo.Rendering;
 
 /// <summary>
 /// System that renders mesh entities through the RenderGraph.
+/// Draws skybox first (at far plane), then opaque objects, then transparent objects.
 /// </summary>
 public sealed class RenderSystem
 {
@@ -19,10 +18,11 @@ public sealed class RenderSystem
         var driver = context.Driver;
         var scene = world.GetResource<GpuSceneData>();
         var ws = world.GetResource<WindowSize>();
+        var skybox = context.Skybox;
 
         var graph = context.RenderGraph;
 
-        graph.AddPass("ForwardOpaque", setup: pass =>
+        graph.AddPass("Forward", setup: pass =>
         {
             var depth = pass.CreateTexture(new TextureDescriptor
             {
@@ -42,7 +42,8 @@ public sealed class RenderSystem
                 Usage = TextureUsage.RenderAttachment,
             });
             pass.WriteTexture(backbuffer);
-            pass.ColorAttachment(backbuffer, DriverLoadAction.Clear, DriverStoreAction.Store, clearColor: new Vector4(0.1f, 0.1f, 0.12f, 1f));
+            pass.ColorAttachment(backbuffer, DriverLoadAction.Clear, DriverStoreAction.Store,
+                clearColor: new Vector4(0.1f, 0.1f, 0.12f, 1f));
 
             var cameraBufferHandle = pass.ImportBuffer("CameraBuffer", new BufferDescriptor
             {
@@ -68,26 +69,31 @@ public sealed class RenderSystem
             var encoder = ctx.Encoder;
             encoder.SetViewport(0, 0, ws.Width, ws.Height);
 
-            for (int i = 0; i < scene.DrawCount; i++)
+            // 1) Skybox — depth LessEqual, depth write off, renders at far plane
+            if (skybox?.Pipeline != null)
             {
-                var draw = scene.GetDraw(i);
-                if (draw.MeshHandle < 0 || draw.MeshHandle >= context.Meshes.Count) continue;
-                if (draw.MaterialId < 0 || draw.MaterialId >= context.Materials.Count) continue;
+                var camData = new CameraData[1];
+                camData[0] = scene.PendingCamera;
+                skybox.CameraBuffer.UploadData<CameraData>(camData);
 
-                var mesh = context.Meshes[draw.MeshHandle];
-                var material = context.Materials[draw.MaterialId];
+                encoder.SetPipeline(skybox.Pipeline);
+                encoder.SetVertexBuffer(0, skybox.VertexBuffer);
+                encoder.SetIndexBuffer(skybox.IndexBuffer);
+                encoder.SetBindingSet(0, skybox.CameraBinding);
+                encoder.SetBindingSet(1, skybox.TextureBinding);
+                encoder.DrawIndexed(36);
+            }
 
-                encoder.SetPipeline(material.Pipeline);
-                encoder.SetVertexBuffer(0, mesh.VertexBuffer);
-                encoder.SetIndexBuffer(mesh.IndexBuffer);
-                encoder.SetBindingSet(0, material.BindingSets[0]);
-                encoder.SetBindingSet(1, material.BindingSets[1], (uint)(i * ObjectData.Size));
-                encoder.SetBindingSet(2, material.BindingSets[2]);
-                if (material.BindingSets.Length > 3)
-                    encoder.SetBindingSet(3, material.BindingSets[3]);
-                if (material.BindingSets.Length > 4)
-                    encoder.SetBindingSet(4, material.BindingSets[4]);
-                encoder.DrawIndexed((int)mesh.IndexCount);
+            // 2) Opaque draws — depth write enabled (pipeline controlled)
+            for (int i = 0; i < scene.OpaqueCount; i++)
+            {
+                scene.EmitDraw(encoder, context, i);
+            }
+
+            // 3) Transparent draws — depth write off, alpha blend, sorted back-to-front
+            for (int i = scene.OpaqueCount; i < scene.DrawCount; i++)
+            {
+                scene.EmitDraw(encoder, context, i);
             }
         });
     }

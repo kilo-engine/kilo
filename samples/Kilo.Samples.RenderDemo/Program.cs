@@ -2,7 +2,7 @@
 // Kilo.Samples.RenderDemo — Unified Rendering + Input Demo
 // =============================================================================
 // 本示例整合了所有渲染和输入功能：
-//   1) 3D 前向渲染：5 个彩色旋转立方体 + 平行光照 + 相机控制
+//   1) 3D 前向渲染：3 不透明 + 3 半透明旋转立方体 + PBR光照 + 相机控制 + Alpha 排序
 //   2) Compute Blur 后处理：按 B 键开关模糊效果
 //   3) 2D 精灵渲染：3 个不同轨迹运动的彩色方块
 //   4) 文字渲染：字体图集 + 动态文本
@@ -55,15 +55,18 @@ app.AddSystem(KiloStage.Startup, world =>
     var scene = world.GetResource<GpuSceneData>();
     var driver = context.Driver!;
 
-    // ── 5 个不同颜色的立方体 ──────────────────────────────────────────────
+    // ── 3 不透明 + 3 半透明 立方体 (PBR) ──────────────────────────────────────────
     var colors = new[]
     {
-        new Vector4(1.0f, 0.3f, 0.3f, 1.0f), // Red
-        new Vector4(0.3f, 1.0f, 0.3f, 1.0f), // Green
-        new Vector4(0.3f, 0.3f, 1.0f, 1.0f), // Blue
-        new Vector4(1.0f, 1.0f, 0.3f, 1.0f), // Yellow
-        new Vector4(1.0f, 0.3f, 1.0f, 1.0f), // Magenta
+        new Vector4(0.8f, 0.2f, 0.2f, 1.0f), // Red (opaque, rough)
+        new Vector4(0.2f, 0.8f, 0.2f, 1.0f), // Green (opaque, metallic)
+        new Vector4(0.2f, 0.3f, 0.9f, 1.0f), // Blue (opaque, smooth)
+        new Vector4(1.0f, 1.0f, 0.3f, 0.4f), // Yellow (transparent)
+        new Vector4(1.0f, 0.3f, 1.0f, 0.6f), // Magenta (transparent)
+        new Vector4(0.3f, 1.0f, 1.0f, 0.5f), // Cyan (transparent)
     };
+    var metallic = new[] { 0.0f, 1.0f, 0.5f, 0.0f, 0.0f, 0.0f };
+    var roughness = new[] { 0.8f, 0.3f, 0.1f, 0.5f, 0.5f, 0.5f };
 
     var materialIds = new int[colors.Length];
     for (int i = 0; i < colors.Length; i++)
@@ -71,16 +74,22 @@ app.AddSystem(KiloStage.Startup, world =>
         materialIds[i] = context.MaterialManager.CreateMaterial(context, scene, new MaterialDescriptor
         {
             BaseColor = colors[i],
+            Metallic = metallic[i],
+            Roughness = roughness[i],
         });
     }
 
-    for (int i = 0; i < 5; i++)
+    for (int i = 0; i < 6; i++)
     {
-        float x = (i - 2) * 2.0f;
+        // Pair each opaque cube with a transparent cube at the same X, closer to camera
+        int pair = i % 3;
+        float x = (pair - 1) * 3.0f;
+        bool isTransparent = i >= 3;
+        float z = isTransparent ? 2.0f : 0.0f;
         world.Entity($"Cube{i}")
             .Set(new LocalTransform
             {
-                Position = new Vector3(x, 0, 0),
+                Position = new Vector3(x, 0, z),
                 Rotation = Quaternion.Identity,
                 Scale = Vector3.One
             })
@@ -108,12 +117,15 @@ app.AddSystem(KiloStage.Startup, world =>
         checkerImage.SaveAsPng(tempPath);
         var texturedMaterial = context.MaterialManager.CreateMaterial(context, scene, new MaterialDescriptor
         {
-            AlbedoTexturePath = tempPath
+            AlbedoTexturePath = tempPath,
+            BaseColor = new Vector4(1f, 1f, 1f, 0.7f),
+            Metallic = 0.3f,
+            Roughness = 0.4f,
         });
         world.Entity("TexturedCube")
             .Set(new LocalTransform
             {
-                Position = new Vector3(6, 0, 0),
+                Position = new Vector3(7, 0, 1),
                 Rotation = Quaternion.Identity,
                 Scale = Vector3.One
             })
@@ -156,12 +168,12 @@ app.AddSystem(KiloStage.Startup, world =>
         // Create skinned mesh vertices (2 quad segments)
         // Upper arm (vertices 0-3): weighted to joint 0
         // Lower arm (vertices 4-7): weighted to joint 1
-        // Each vertex: pos(3) + normal(3) + uv(2) + joints(4 uint) + weights(4 float) = 64 bytes
-        var skinnedVertices = new byte[8 * 64]; // 8 vertices
+        // pos(3) + normal(3) + uv(2) + tangent(4) + joints(4 uint) + weights(4 float) = 80 bytes
+        var skinnedVertices = new byte[8 * SkinnedMesh.BytesPerVertex]; // 8 vertices
 
         for (int v = 0; v < 8; v++)
         {
-            int offset = v * 64;
+            int offset = v * SkinnedMesh.BytesPerVertex;
 
             // Determine which segment and joint weight
             bool isUpperArm = v < 4;
@@ -189,17 +201,23 @@ app.AddSystem(KiloStage.Startup, world =>
             BitConverter.GetBytes(u).CopyTo(skinnedVertices, offset + 24);
             BitConverter.GetBytes(vCoord).CopyTo(skinnedVertices, offset + 28);
 
+            // Tangent (16 bytes) - +X for normal facing +Z, w=1 (handedness)
+            BitConverter.GetBytes(1f).CopyTo(skinnedVertices, offset + 32);
+            BitConverter.GetBytes(0f).CopyTo(skinnedVertices, offset + 36);
+            BitConverter.GetBytes(0f).CopyTo(skinnedVertices, offset + 40);
+            BitConverter.GetBytes(1f).CopyTo(skinnedVertices, offset + 44);
+
             // Joints (16 bytes) - 4 uint32
-            BitConverter.GetBytes(jointIndex).CopyTo(skinnedVertices, offset + 32);
-            BitConverter.GetBytes(0u).CopyTo(skinnedVertices, offset + 36);
-            BitConverter.GetBytes(0u).CopyTo(skinnedVertices, offset + 40);
-            BitConverter.GetBytes(0u).CopyTo(skinnedVertices, offset + 44);
+            BitConverter.GetBytes(jointIndex).CopyTo(skinnedVertices, offset + 48);
+            BitConverter.GetBytes(0u).CopyTo(skinnedVertices, offset + 52);
+            BitConverter.GetBytes(0u).CopyTo(skinnedVertices, offset + 56);
+            BitConverter.GetBytes(0u).CopyTo(skinnedVertices, offset + 60);
 
             // Weights (16 bytes) - full weight to jointIndex
-            BitConverter.GetBytes(1f).CopyTo(skinnedVertices, offset + 48);
-            BitConverter.GetBytes(0f).CopyTo(skinnedVertices, offset + 52);
-            BitConverter.GetBytes(0f).CopyTo(skinnedVertices, offset + 56);
-            BitConverter.GetBytes(0f).CopyTo(skinnedVertices, offset + 60);
+            BitConverter.GetBytes(1f).CopyTo(skinnedVertices, offset + 64);
+            BitConverter.GetBytes(0f).CopyTo(skinnedVertices, offset + 68);
+            BitConverter.GetBytes(0f).CopyTo(skinnedVertices, offset + 72);
+            BitConverter.GetBytes(0f).CopyTo(skinnedVertices, offset + 76);
         }
 
         // Indices for 2 quads (6 indices each)
@@ -273,23 +291,7 @@ app.AddSystem(KiloStage.Startup, world =>
         var objectBindingSet = driver.CreateDynamicUniformBindingSet(skinnedPipeline, 1, scene.ObjectDataBuffer, (nuint)ObjectData.Size);
         var lightBindingSet = driver.CreateBindingSetForPipeline(skinnedPipeline, 2, [new UniformBufferBinding { Buffer = scene.LightBuffer, Binding = 0 }]);
 
-        // Reuse shadow bindings
-        var shadowDataBuffer = scene.ShadowDataBuffer;
-        var shadowSampler = scene.ShadowSampler;
-        var placeholderDepthTexture = driver.CreateTexture(new TextureDescriptor
-        {
-            Width = 1, Height = 1,
-            Format = DriverPixelFormat.Depth24Plus,
-            Usage = TextureUsage.ShaderBinding | TextureUsage.RenderAttachment,
-        });
-        var placeholderDepthView = driver.CreateTextureView(placeholderDepthTexture, new TextureViewDescriptor
-        {
-            Format = DriverPixelFormat.Depth24Plus,
-            Dimension = TextureViewDimension.View2D,
-            MipLevelCount = 1,
-        });
-
-        // Group 3: texture bindings
+        // Group 3: texture bindings — centralized via MaterialManager (single source of truth for group 3 layout)
         var defaultSampler = driver.CreateSampler(new SamplerDescriptor
         {
             MinFilter = FilterMode.Linear, MagFilter = FilterMode.Linear, MipFilter = FilterMode.Linear,
@@ -306,16 +308,7 @@ app.AddSystem(KiloStage.Startup, world =>
             Format = DriverPixelFormat.RGBA8Unorm, Dimension = TextureViewDimension.View2D, MipLevelCount = 1,
         });
 
-        var textureBindingSet = driver.CreateBindingSetForPipeline(skinnedPipeline, 3,
-            [new UniformBufferBinding { Buffer = shadowDataBuffer, Binding = 4 }],
-            [
-                new TextureBinding { Binding = 0, TextureView = defaultTextureView },
-                new TextureBinding { Binding = 2, TextureView = placeholderDepthView },
-            ],
-            [
-                new SamplerBinding { Binding = 1, Sampler = defaultSampler },
-                new SamplerBinding { Binding = 3, Sampler = shadowSampler },
-            ]);
+        var textureBindingSet = context.MaterialManager.CreateTextureBindingSet(driver, skinnedPipeline, scene, defaultTextureView, defaultTextureView);
 
         // Group 4: joint matrices
         var jointBuffer = driver.CreateBuffer(new BufferDescriptor
@@ -378,9 +371,9 @@ app.AddSystem(KiloStage.Startup, world =>
     world.Entity("Sun")
         .Set(new DirectionalLight
         {
-            Direction = new Vector3(0.0f, -0.5f, -1.0f),
+            Direction = new Vector3(-0.5f, -0.7f, -0.5f),
             Color = new Vector3(1.0f, 0.95f, 0.9f),
-            Intensity = 1.0f
+            Intensity = 3.0f
         });
 
     // ── 文字实体 ──────────────────────────────────────────────────────────
@@ -678,6 +671,7 @@ public sealed class RenderDemoPlugin : IKiloPlugin
 
         app.AddSystem(KiloStage.Last, new BeginFrameSystem().Update);
         app.AddSystem(KiloStage.Last, new ShadowMapSystem().Update);
+        app.AddSystem(KiloStage.Last, new SkyboxRenderSystem().Update);
         app.AddSystem(KiloStage.Last, new BlurRenderSystem().Update);
         app.AddSystem(KiloStage.Last, new SpriteRenderSystem().Update);
         app.AddSystem(KiloStage.Last, new TextRenderSystem().Update);
@@ -829,19 +823,6 @@ public sealed class RenderDemoPlugin : IKiloPlugin
             [new UniformBufferBinding { Buffer = scene.LightBuffer, Binding = 0 }]);
 
         // Texture + shadow binding set (group 3)
-        var shadowSampler = scene.ShadowSampler!;
-        var shadowDataBuffer = scene.ShadowDataBuffer!;
-
-        var placeholderDepth = driver.CreateTexture(new TextureDescriptor
-        {
-            Width = 1, Height = 1, Format = DriverPixelFormat.Depth24Plus,
-            Usage = TextureUsage.ShaderBinding | TextureUsage.RenderAttachment,
-        });
-        var placeholderDepthView = driver.CreateTextureView(placeholderDepth, new TextureViewDescriptor
-        {
-            Format = DriverPixelFormat.Depth24Plus, Dimension = TextureViewDimension.View2D, MipLevelCount = 1,
-        });
-
         var defaultSampler = driver.CreateSampler(new SamplerDescriptor
         {
             MinFilter = FilterMode.Linear, MagFilter = FilterMode.Linear, MipFilter = FilterMode.Linear,
@@ -906,16 +887,8 @@ public sealed class RenderDemoPlugin : IKiloPlugin
             Usage = BufferUsage.Uniform | BufferUsage.CopyDst,
         });
 
-        var textureBS = driver.CreateBindingSetForPipeline(skinnedPipeline, 3,
-            [new UniformBufferBinding { Buffer = shadowDataBuffer, Binding = 4 }],
-            [
-                new TextureBinding { Binding = 0, TextureView = albedoView },
-                new TextureBinding { Binding = 2, TextureView = placeholderDepthView },
-            ],
-            [
-                new SamplerBinding { Binding = 1, Sampler = albedoSampler },
-                new SamplerBinding { Binding = 3, Sampler = shadowSampler },
-            ]);
+        // Group 3: texture bindings — centralized via MaterialManager
+        var textureBS = context.MaterialManager.CreateTextureBindingSet(driver, skinnedPipeline, scene, albedoView, albedoView);
 
         // Group 4: joint matrices
         var jointBS = driver.CreateBindingSetForPipeline(skinnedPipeline, 4,
@@ -1175,27 +1148,29 @@ public sealed class BlurRenderSystem
             var encoder = ctx.Encoder;
             encoder.SetViewport(0, 0, ws.Width, ws.Height);
 
-            for (int i = 0; i < scene.DrawCount; i++)
+            // Skybox first
+            var skybox = context.Skybox;
+            if (skybox?.Pipeline != null)
             {
-                var draw = scene.GetDraw(i);
-                if (draw.MeshHandle < 0 || draw.MeshHandle >= context.Meshes.Count) continue;
-                if (draw.MaterialId < 0 || draw.MaterialId >= context.Materials.Count) continue;
+                var camData = new CameraData[1];
+                camData[0] = scene.PendingCamera;
+                skybox.CameraBuffer.UploadData<CameraData>(camData);
 
-                var mesh = context.Meshes[draw.MeshHandle];
-                var material = context.Materials[draw.MaterialId];
-
-                encoder.SetPipeline(material.Pipeline);
-                encoder.SetVertexBuffer(0, mesh.VertexBuffer);
-                encoder.SetIndexBuffer(mesh.IndexBuffer);
-                encoder.SetBindingSet(0, material.BindingSets[0]);
-                encoder.SetBindingSet(1, material.BindingSets[1], (uint)(i * 256));
-                encoder.SetBindingSet(2, material.BindingSets[2]);
-                if (material.BindingSets.Length > 3)
-                    encoder.SetBindingSet(3, material.BindingSets[3]);
-                if (draw.IsSkinned && draw.JointBindingSet != null)
-                    encoder.SetBindingSet(4, draw.JointBindingSet);
-                encoder.DrawIndexed((int)mesh.IndexCount);
+                encoder.SetPipeline(skybox.Pipeline);
+                encoder.SetVertexBuffer(0, skybox.VertexBuffer);
+                encoder.SetIndexBuffer(skybox.IndexBuffer);
+                encoder.SetBindingSet(0, skybox.CameraBinding);
+                encoder.SetBindingSet(1, skybox.TextureBinding);
+                encoder.DrawIndexed(36);
             }
+
+            // Opaque draws
+            for (int i = 0; i < scene.OpaqueCount; i++)
+                scene.EmitDraw(encoder, context, i);
+
+            // Transparent draws sorted back-to-front
+            for (int i = scene.OpaqueCount; i < scene.DrawCount; i++)
+                scene.EmitDraw(encoder, context, i);
         });
 
         // Pass 2 (可选): Separable Gaussian Blur (H + V)
@@ -1219,7 +1194,6 @@ public sealed class BlurRenderSystem
                 pass.WriteTexture(tempColor);
             }, execute: ctx =>
             {
-                Console.WriteLine("[Blur] H-pass executing");
                 var encoder = ctx.Encoder;
                 encoder.SetComputePipeline(_blurHPipeline!);
 
@@ -1251,7 +1225,6 @@ public sealed class BlurRenderSystem
                 pass.WriteTexture(blurredColor);
             }, execute: ctx =>
             {
-                Console.WriteLine("[Blur] V-pass executing");
                 var encoder = ctx.Encoder;
                 encoder.SetComputePipeline(_blurVPipeline!);
 
@@ -1289,7 +1262,6 @@ public sealed class BlurRenderSystem
             pass.ColorAttachment(backbuffer, DriverLoadAction.Clear, DriverStoreAction.Store, clearColor: new Vector4(0, 0, 0, 1));
         }, execute: ctx =>
         {
-            Console.WriteLine($"[Blur] Blit executing — BlurEnabled={BlurEnabled}");
             var encoder = ctx.Encoder;
             encoder.SetPipeline(_blitPipeline!);
 

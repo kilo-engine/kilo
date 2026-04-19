@@ -193,8 +193,6 @@ public sealed class TextRenderSystem
         if (vertices.Count == 0) return;
 
         // Upload vertex data (recreate dynamic buffer each frame)
-        // For simplicity, use a temporary buffer approach
-        // TODO: Use a ring buffer for better performance
         var dynamicVB = driver.CreateBuffer(new BufferDescriptor
         {
             Size = (nuint)(vertices.Count * sizeof(float)),
