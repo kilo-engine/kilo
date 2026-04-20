@@ -85,7 +85,7 @@ public sealed class SkyboxRenderSystem
             VertexShader = vs,
             FragmentShader = fs,
             Topology = DriverPrimitiveTopology.TriangleList,
-            ColorTargets = [new ColorTargetDescriptor { Format = driver.SwapchainFormat }],
+            ColorTargets = [new ColorTargetDescriptor { Format = DriverPixelFormat.RGBA16Float }],
             VertexBuffers =
             [
                 new VertexBufferLayout

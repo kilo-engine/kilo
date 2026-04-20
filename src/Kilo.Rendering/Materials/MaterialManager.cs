@@ -116,8 +116,8 @@ public sealed class MaterialManager
         var mesh = context.Meshes[0];
 
         var colorTarget = transparent
-            ? new ColorTargetDescriptor { Format = driver.SwapchainFormat, Blend = AlphaBlend }
-            : new ColorTargetDescriptor { Format = driver.SwapchainFormat };
+            ? new ColorTargetDescriptor { Format = DriverPixelFormat.RGBA16Float, Blend = AlphaBlend }
+            : new ColorTargetDescriptor { Format = DriverPixelFormat.RGBA16Float };
 
         return driver.CreateRenderPipelineWithDynamicUniforms(new RenderPipelineDescriptor
         {

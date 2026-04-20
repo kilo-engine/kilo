@@ -215,6 +215,11 @@ public sealed class MockRenderDriver : IRenderDriver
         return new MockBindingSet();
     }
 
+    public IBindingSet CreateBindingSetForComputePipeline(IComputePipeline pipeline, int groupIndex, TextureBinding[] textures, StorageTextureBinding[] storageTextures, UniformBufferBinding[] uniformBuffers)
+    {
+        return new MockBindingSet();
+    }
+
     public DriverPixelFormat SwapchainFormat => DriverPixelFormat.BGRA8Unorm;
 
     public ITexture GetCurrentSwapchainTexture()

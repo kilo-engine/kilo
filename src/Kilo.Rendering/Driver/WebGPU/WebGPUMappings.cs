@@ -16,6 +16,7 @@ internal static class WebGPUMappings
         DriverPixelFormat.Depth24Plus => TextureFormat.Depth24Plus,
         DriverPixelFormat.Depth24PlusStencil8 => TextureFormat.Depth24PlusStencil8,
         DriverPixelFormat.Depth32Float => TextureFormat.Depth24Plus,
+        DriverPixelFormat.RGBA16Float => TextureFormat.Rgba16float,
         _ => TextureFormat.Bgra8Unorm,
     };
 

@@ -24,4 +24,10 @@ public sealed class RenderPassExecutionContext
         var texture = _graph.GetResolvedTexture(handle);
         return _graph.GetOrCreateTextureView(_driver, handle, texture);
     }
+    public ITextureView GetTextureView(string importedName)
+    {
+        var handle = _graph.GetImportedHandle(importedName);
+        var texture = _graph.GetResolvedTexture(handle);
+        return _graph.GetOrCreateTextureView(_driver, handle, texture);
+    }
 }

@@ -20,7 +20,7 @@ internal static class SpriteResources
         const int MaxSprites = 64;
         const int UniformBufferSize = UniformAlign * MaxSprites;
 
-        var swapchainFormat = driver.SwapchainFormat;
+        var swapchainFormat = DriverPixelFormat.RGBA16Float;
 
         var spritePipelineKey = new PipelineCacheKey
         {

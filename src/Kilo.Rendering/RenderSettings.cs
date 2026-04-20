@@ -18,4 +18,11 @@ public sealed class RenderSettings
 
     /// <summary>Optional cubemap face paths for skybox (order: +X, -X, +Y, -Y, +Z, -Z). Null = procedural gradient.</summary>
     public string[]? SkyboxFacePaths { get; set; }
+
+    // Post-processing settings
+    public bool BloomEnabled { get; set; } = true;
+    public float BloomThreshold { get; set; } = 1.0f;
+    public float BloomIntensity { get; set; } = 0.5f;
+    public bool ToneMappingEnabled { get; set; } = true;
+    public bool FxaaEnabled { get; set; } = true;
 }

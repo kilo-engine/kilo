@@ -9,6 +9,7 @@ namespace Kilo.Rendering;
 /// <summary>
 /// System that renders mesh entities through the RenderGraph.
 /// Draws skybox first (at far plane), then opaque objects, then transparent objects.
+/// Renders to SceneColor (HDR RGBA16Float) for post-processing.
 /// </summary>
 public sealed class RenderSystem
 {
@@ -20,7 +21,24 @@ public sealed class RenderSystem
         var ws = world.GetResource<WindowSize>();
         var skybox = context.Skybox;
 
+        // Ensure SceneColor texture exists and matches window size
+        var pp = context.PostProcess;
+        if (pp.SceneColorTexture == null || pp.SceneColorWidth != ws.Width || pp.SceneColorHeight != ws.Height)
+        {
+            pp.SceneColorTexture?.Dispose();
+            pp.SceneColorTexture = driver.CreateTexture(new TextureDescriptor
+            {
+                Width = ws.Width,
+                Height = ws.Height,
+                Format = DriverPixelFormat.RGBA16Float,
+                Usage = TextureUsage.RenderAttachment | TextureUsage.ShaderBinding,
+            });
+            pp.SceneColorWidth = ws.Width;
+            pp.SceneColorHeight = ws.Height;
+        }
+
         var graph = context.RenderGraph;
+        graph.RegisterExternalTexture("SceneColor", pp.SceneColorTexture);
 
         graph.AddPass("Forward", setup: pass =>
         {
@@ -34,15 +52,15 @@ public sealed class RenderSystem
             pass.WriteTexture(depth);
             pass.DepthStencilAttachment(depth, DriverLoadAction.Clear, DriverStoreAction.Store, clearDepth: 1.0f);
 
-            var backbuffer = pass.ImportTexture("Backbuffer", new TextureDescriptor
+            var sceneColor = pass.ImportTexture("SceneColor", new TextureDescriptor
             {
                 Width = ws.Width,
                 Height = ws.Height,
-                Format = driver.SwapchainFormat,
-                Usage = TextureUsage.RenderAttachment,
+                Format = DriverPixelFormat.RGBA16Float,
+                Usage = TextureUsage.RenderAttachment | TextureUsage.ShaderBinding,
             });
-            pass.WriteTexture(backbuffer);
-            pass.ColorAttachment(backbuffer, DriverLoadAction.Clear, DriverStoreAction.Store,
+            pass.WriteTexture(sceneColor);
+            pass.ColorAttachment(sceneColor, DriverLoadAction.Clear, DriverStoreAction.Store,
                 clearColor: new Vector4(0.1f, 0.1f, 0.12f, 1f));
 
             var cameraBufferHandle = pass.ImportBuffer("CameraBuffer", new BufferDescriptor

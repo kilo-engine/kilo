@@ -57,7 +57,7 @@ public sealed class TextRenderSystem
             var vs = context.ShaderCache.GetOrCreateShader(driver, TextShaders.WGSL, "vs_main");
             var fs = context.ShaderCache.GetOrCreateShader(driver, TextShaders.WGSL, "fs_main");
 
-            var swapchainFormat = driver.SwapchainFormat;
+            var swapchainFormat = DriverPixelFormat.RGBA16Float;
             _textPipeline = driver.CreateRenderPipeline(new RenderPipelineDescriptor
             {
                 VertexShader = vs,
@@ -211,15 +211,15 @@ public sealed class TextRenderSystem
         var graph = context.RenderGraph;
         graph.AddPass("TextPass", setup: pass =>
         {
-            var backbuffer = pass.ImportTexture("Backbuffer", new TextureDescriptor
+            var sceneColor = pass.ImportTexture("SceneColor", new TextureDescriptor
             {
                 Width = ws.Width,
                 Height = ws.Height,
-                Format = driver.SwapchainFormat,
-                Usage = TextureUsage.RenderAttachment,
+                Format = DriverPixelFormat.RGBA16Float,
+                Usage = TextureUsage.RenderAttachment | TextureUsage.ShaderBinding,
             });
-            pass.WriteTexture(backbuffer);
-            pass.ColorAttachment(backbuffer, DriverLoadAction.Load, DriverStoreAction.Store);
+            pass.WriteTexture(sceneColor);
+            pass.ColorAttachment(sceneColor, DriverLoadAction.Load, DriverStoreAction.Store);
         }, execute: ctx =>
         {
             var encoder = ctx.Encoder;

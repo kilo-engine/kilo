@@ -16,6 +16,7 @@ public sealed class BindingLayoutEntry
     public int Binding { get; init; }
     public BindingType Type { get; init; }
     public ShaderVisibility Visibility { get; init; } = ShaderVisibility.All;
+    public nuint MinBindingSize { get; init; } = 0;
 }
 
 public sealed class BindingSetLayout

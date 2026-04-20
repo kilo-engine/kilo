@@ -267,7 +267,7 @@ app.AddSystem(KiloStage.Startup, world =>
             Topology = DriverPrimitiveTopology.TriangleList,
             SampleCount = 1,
             VertexBuffers = [SkinnedMesh.Layout],
-            ColorTargets = [new ColorTargetDescriptor { Format = driver.SwapchainFormat }],
+            ColorTargets = [new ColorTargetDescriptor { Format = DriverPixelFormat.RGBA16Float }],
             DepthStencil = new DepthStencilStateDescriptor
             {
                 Format = DriverPixelFormat.Depth24Plus,
@@ -675,6 +675,8 @@ public sealed class RenderDemoPlugin : IKiloPlugin
         app.AddSystem(KiloStage.Last, new BlurRenderSystem().Update);
         app.AddSystem(KiloStage.Last, new SpriteRenderSystem().Update);
         app.AddSystem(KiloStage.Last, new TextRenderSystem().Update);
+        // PostProcessSystem handles SceneColor → Backbuffer (Bloom + ToneMapping + FXAA)
+        app.AddSystem(KiloStage.Last, new PostProcessSystem().Update);
         app.AddSystem(KiloStage.Last, new EndFrameSystem().Update);
         app.AddSystem(KiloStage.Last, new WindowResizeSystem().Update);
         // Reset per-frame input state AFTER all systems have read it
@@ -792,7 +794,7 @@ public sealed class RenderDemoPlugin : IKiloPlugin
             Topology = DriverPrimitiveTopology.TriangleList,
             SampleCount = 1,
             VertexBuffers = [SkinnedMesh.Layout],
-            ColorTargets = [new ColorTargetDescriptor { Format = driver.SwapchainFormat }],
+            ColorTargets = [new ColorTargetDescriptor { Format = DriverPixelFormat.RGBA16Float }],
             DepthStencil = new DepthStencilStateDescriptor
             {
                 Format = DriverPixelFormat.Depth24Plus,
@@ -804,7 +806,7 @@ public sealed class RenderDemoPlugin : IKiloPlugin
             VertexShader = skinnedVs,
             FragmentShader = skinnedFs,
             Topology = DriverPrimitiveTopology.TriangleList,
-            ColorTargets = [new ColorTargetDescriptor { Format = driver.SwapchainFormat }],
+            ColorTargets = [new ColorTargetDescriptor { Format = DriverPixelFormat.RGBA16Float }],
             VertexBuffers = [SkinnedMesh.Layout],
             DepthStencil = new DepthStencilStateDescriptor
             {
@@ -1102,15 +1104,32 @@ public sealed class BlurRenderSystem
         IBindingSet? blurBindings = null;
         IBindingSet? blitBindings = null;
 
-        // Pass 1: 3D 前向渲染 → 离屏纹理
-        graph.AddPass("SceneForward", setup: pass =>
+        // Ensure SceneColor texture for post-processing pipeline
+        var pp = context.PostProcess;
+        if (pp.SceneColorTexture == null || pp.SceneColorWidth != ws.Width || pp.SceneColorHeight != ws.Height)
         {
-            offscreenColor = pass.CreateTexture(new TextureDescriptor
+            pp.SceneColorTexture?.Dispose();
+            pp.SceneColorTexture = driver.CreateTexture(new TextureDescriptor
             {
                 Width = ws.Width,
                 Height = ws.Height,
-                Format = driver.SwapchainFormat,
-                Usage = TextureUsage.RenderAttachment | TextureUsage.ShaderBinding | TextureUsage.CopySrc,
+                Format = DriverPixelFormat.RGBA16Float,
+                Usage = TextureUsage.RenderAttachment | TextureUsage.ShaderBinding,
+            });
+            pp.SceneColorWidth = ws.Width;
+            pp.SceneColorHeight = ws.Height;
+        }
+        graph.RegisterExternalTexture("SceneColor", pp.SceneColorTexture);
+
+        // Pass 1: 3D 前向渲染 → SceneColor (HDR)
+        graph.AddPass("SceneForward", setup: pass =>
+        {
+            offscreenColor = pass.ImportTexture("SceneColor", new TextureDescriptor
+            {
+                Width = ws.Width,
+                Height = ws.Height,
+                Format = DriverPixelFormat.RGBA16Float,
+                Usage = TextureUsage.RenderAttachment | TextureUsage.ShaderBinding,
             });
             pass.WriteTexture(offscreenColor);
             pass.ColorAttachment(offscreenColor, DriverLoadAction.Clear, DriverStoreAction.Store, clearColor: new Vector4(0.1f, 0.1f, 0.12f, 1f));
@@ -1245,36 +1264,8 @@ public sealed class BlurRenderSystem
             blurBindings = blurHBindings; // for cleanup below
         }
 
-        // Pass 3: Blit → Backbuffer
-        // 注意：setup/execute 在 Compile() 时按序执行，此时 offscreenColor/blurredColor 已被前面的 setup 赋值
-        graph.AddPass("BlitToBackbuffer", setup: pass =>
-        {
-            var source = BlurEnabled ? blurredColor : offscreenColor;
-            pass.ReadTexture(source);
-            var backbuffer = pass.ImportTexture("Backbuffer", new TextureDescriptor
-            {
-                Width = ws.Width,
-                Height = ws.Height,
-                Format = driver.SwapchainFormat,
-                Usage = TextureUsage.RenderAttachment,
-            });
-            pass.WriteTexture(backbuffer);
-            pass.ColorAttachment(backbuffer, DriverLoadAction.Clear, DriverStoreAction.Store, clearColor: new Vector4(0, 0, 0, 1));
-        }, execute: ctx =>
-        {
-            var encoder = ctx.Encoder;
-            encoder.SetPipeline(_blitPipeline!);
-
-            var source = BlurEnabled ? blurredColor : offscreenColor;
-            var srcView = ctx.GetTextureView(source);
-            blitBindings = driver.CreateBindingSetForPipeline(
-                _blitPipeline!, 0,
-                [new TextureBinding { TextureView = srcView, Binding = 0 }],
-                [new SamplerBinding { Sampler = _blitSampler!, Binding = 1 }]);
-
-            encoder.SetBindingSet(0, blitBindings);
-            encoder.Draw(3);
-        });
+        // PostProcessSystem handles SceneColor → Backbuffer now
+        // (Bloom + ToneMapping + FXAA)
 
         // 清理每帧的临时 BindingSet
         blurBindings?.Dispose();

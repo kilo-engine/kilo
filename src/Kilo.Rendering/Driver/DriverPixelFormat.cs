@@ -9,4 +9,5 @@ public enum DriverPixelFormat
     Depth24Plus,
     Depth24PlusStencil8,
     Depth32Float,
+    RGBA16Float,
 }

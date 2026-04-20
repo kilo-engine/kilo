@@ -29,4 +29,5 @@ public sealed class RenderContext
     public SkyboxState Skybox { get; } = new();
     public ScreenshotState Screenshot { get; } = new();
     public SpriteRenderState Sprite { get; } = new();
+    public PostProcessState PostProcess { get; } = new();
 }

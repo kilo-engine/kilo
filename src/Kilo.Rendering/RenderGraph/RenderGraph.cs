@@ -76,6 +76,13 @@ public sealed class RenderGraph : IDisposable
         throw new InvalidOperationException($"Imported resource '{name}' not found.");
     }
 
+    internal RenderResourceHandle GetImportedHandle(string name)
+    {
+        if (_importedResources.TryGetValue(name, out var handle))
+            return handle;
+        throw new InvalidOperationException($"Imported resource '{name}' not found.");
+    }
+
     internal ITextureView GetOrCreateTextureView(IRenderDriver driver, RenderResourceHandle handle, ITexture texture)
     {
         if (_textureViews.TryGetValue(handle.Id, out var view))

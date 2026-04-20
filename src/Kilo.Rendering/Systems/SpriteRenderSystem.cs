@@ -85,15 +85,15 @@ public sealed class SpriteRenderSystem
 
         graph.AddPass("SpritePass", setup: pass =>
         {
-            var backbuffer = pass.ImportTexture("Backbuffer", new TextureDescriptor
+            var sceneColor = pass.ImportTexture("SceneColor", new TextureDescriptor
             {
                 Width = windowSize.Width,
                 Height = windowSize.Height,
-                Format = driver.SwapchainFormat,
-                Usage = TextureUsage.RenderAttachment,
+                Format = DriverPixelFormat.RGBA16Float,
+                Usage = TextureUsage.RenderAttachment | TextureUsage.ShaderBinding,
             });
-            pass.WriteTexture(backbuffer);
-            pass.ColorAttachment(backbuffer, DriverLoadAction.Load, DriverStoreAction.Store);
+            pass.WriteTexture(sceneColor);
+            pass.ColorAttachment(sceneColor, DriverLoadAction.Load, DriverStoreAction.Store);
 
             if (context.Sprite.UniformBuffer is not null)
             {

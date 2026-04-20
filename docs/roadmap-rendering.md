@@ -10,7 +10,7 @@
 - [x] Compute Shader 支持
 
 ### 光照与阴影
-- [x] Phong 光照模型
+- [x] PBR 光照模型（CookTorrance BRDF, Metallic-Roughness 工作流）
 - [x] 方向光 (DirectionalLight)
 - [x] 点光源 (PointLight)，最多 64 个
 - [x] Shadow Map (2048x2048, 单级级联)
@@ -24,6 +24,8 @@
 - [x] Material / MaterialInstance
 - [x] Pipeline Cache / Shader Cache
 - [x] 动态 Uniform Offset（实例化）
+- [x] 法线贴图 (Normal Mapping)
+- [x] 天空盒 (Skybox)
 
 ### 优化
 - [x] 视锥剔除 (FrustumCullingSystem)
@@ -34,17 +36,14 @@
 - [x] 2D 精灵渲染 (SpriteRenderSystem)
 - [x] GPU 文字渲染 (HarfBuzz 字体整形)
 - [x] Compute Blur 后处理
+- [x] HDR 渲染 (RGBA16Float 中间纹理)
+- [x] 后处理管线 — ACES ToneMapping + Bloom + FXAA，接入 RenderGraph
 
 ## 进行中 / 短期
 
-### P0 — 视觉质量基线
-- [ ] **PBR 材质** — Metallic-Roughness 工作流，替代当前 Phong 光照
-- [ ] **法线贴图 (Normal Mapping)** — 表面细节，依赖切线数据
-- [ ] **后处理管线** — ToneMapping + Bloom + FXAA/TAA，接入 RenderGraph
-
 ### P1 — 场景表现力
 - [ ] **级联阴影 (CSM)** — 户外大场景阴影质量
-- [ ] **天空盒 / 环境贴图** — Skybox + IBL 环境光照
+- [ ] **环境贴图 / IBL** — 基于图像的环境光照
 - [ ] **粒子系统** — GPU Compute Particle，基础发射器
 
 ## 中期
@@ -52,7 +51,6 @@
 ### P2 — 渲染质量提升
 - [ ] **Screen Space Ambient Occlusion (SSAO)** — 环境遮蔽
 - [ ] **Screen Space Reflections (SSR)** — 实时反射
-- [ ] **HDR 渲染** — HDR color buffer + ACES ToneMapping
 - [ ] **透明物体排序** — OIT 或 Back-to-front 排序
 
 ### P3 — 性能与扩展
@@ -72,4 +70,4 @@
 
 ---
 
-> MVP 阶段建议优先完成 **P0**（PBR + 法线贴图 + 后处理），即可达到大多数 3D 游戏的视觉基线。
+> P0 已全部完成（PBR + 法线贴图 + 天空盒 + 后处理管线）。建议下一步完成 **P1**（CSM + IBL + 粒子系统）。

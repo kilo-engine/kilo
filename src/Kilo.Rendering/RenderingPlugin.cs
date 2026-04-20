@@ -38,6 +38,7 @@ public sealed class RenderingPlugin : IKiloPlugin
         app.AddSystem(KiloStage.Last, new RenderSystem().Update);
         app.AddSystem(KiloStage.Last, new SpriteRenderSystem().Update);
         app.AddSystem(KiloStage.Last, new TextRenderSystem().Update);
+        app.AddSystem(KiloStage.Last, new PostProcessSystem().Update);
         app.AddSystem(KiloStage.Last, new EndFrameSystem().Update);
         app.AddSystem(KiloStage.Last, new WindowResizeSystem().Update);
     }
