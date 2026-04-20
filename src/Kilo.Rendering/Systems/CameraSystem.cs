@@ -39,9 +39,20 @@ public sealed class CameraSystem
                 // View matrix: world to camera space
                 camera.ViewMatrix = Matrix4x4.CreateLookAt(position, position + forward, up);
 
-                // Get window size for aspect ratio
-                var windowSize = world.GetResource<WindowSize>();
-                float aspectRatio = (float)windowSize.Width / windowSize.Height;
+                // Determine render target dimensions for aspect ratio
+                int renderWidth, renderHeight;
+                if (camera.Target == CameraTarget.RenderTexture && camera.RenderTexture != null)
+                {
+                    renderWidth = camera.RenderTexture.Width;
+                    renderHeight = camera.RenderTexture.Height;
+                }
+                else
+                {
+                    var windowSize = world.GetResource<WindowSize>();
+                    renderWidth = windowSize.Width;
+                    renderHeight = windowSize.Height;
+                }
+                float aspectRatio = (float)renderWidth / renderHeight;
 
                 // Projection matrix: camera to clip space
                 camera.ProjectionMatrix = Matrix4x4.CreatePerspectiveFieldOfView(

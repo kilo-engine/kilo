@@ -62,6 +62,10 @@ public class SpriteRenderSystemTests
             }
         }
 
+        // Register a SceneColor external texture so RenderGraph can resolve it
+        context.RenderGraph.RegisterExternalTexture("SceneColor",
+            driver.CreateTexture(new TextureDescriptor { Width = 1280, Height = 720, Format = DriverPixelFormat.RGBA16Float, Usage = TextureUsage.RenderAttachment | TextureUsage.ShaderBinding }));
+
         var system = new SpriteRenderSystem();
         var exception = Record.Exception(() => system.Update(world));
 

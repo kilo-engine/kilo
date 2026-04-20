@@ -17,6 +17,20 @@ namespace Kilo.Rendering;
 /// </summary>
 public sealed class TextRenderSystem
 {
+    /// <summary>Backward-compatible entry point with default screen context.</summary>
+    public void Update(KiloWorld world)
+    {
+        var ws = world.GetResource<WindowSize>();
+        var ctx = new CameraRenderContext(new ActiveCameraEntry
+        {
+            Target = CameraTarget.Screen,
+            CameraType = CameraType.Scene,
+            RenderWidth = ws.Width,
+            RenderHeight = ws.Height,
+        });
+        AddTextPass(ctx, world);
+    }
+
     private IRenderPipeline? _textPipeline;
     private IBuffer? _textUniformBuffer;
     private IBuffer? _textQuadVB;
@@ -40,11 +54,10 @@ public sealed class TextRenderSystem
         private Vector4 _pad9;
     }
 
-    public void Update(KiloWorld world)
+    public void AddTextPass(CameraRenderContext ctx, KiloWorld world)
     {
         var context = world.GetResource<RenderContext>();
         var driver = context.Driver;
-        var ws = world.GetResource<WindowSize>();
 
         // Lazy init
         if (_fontAtlas == null)
@@ -57,7 +70,6 @@ public sealed class TextRenderSystem
             var vs = context.ShaderCache.GetOrCreateShader(driver, TextShaders.WGSL, "vs_main");
             var fs = context.ShaderCache.GetOrCreateShader(driver, TextShaders.WGSL, "fs_main");
 
-            var swapchainFormat = DriverPixelFormat.RGBA16Float;
             _textPipeline = driver.CreateRenderPipeline(new RenderPipelineDescriptor
             {
                 VertexShader = vs,
@@ -67,7 +79,7 @@ public sealed class TextRenderSystem
                 [
                     new VertexBufferLayout
                     {
-                        ArrayStride = 4 * sizeof(float), // pos(2) + uv(2)
+                        ArrayStride = 4 * sizeof(float),
                         Attributes =
                         [
                             new VertexAttributeDescriptor { ShaderLocation = 0, Format = VertexFormat.Float32x2, Offset = 0 },
@@ -79,7 +91,7 @@ public sealed class TextRenderSystem
                 [
                     new ColorTargetDescriptor
                     {
-                        Format = swapchainFormat,
+                        Format = DriverPixelFormat.RGBA16Float,
                         Blend = new BlendStateDescriptor
                         {
                             Color = new BlendComponentDescriptor
@@ -115,7 +127,6 @@ public sealed class TextRenderSystem
                 [new TextureBinding { Binding = 1, TextureView = _fontAtlas.TextureView }],
                 [new SamplerBinding { Binding = 2, Sampler = fontSampler }]);
 
-            // Unit quad for each glyph
             float[] quadVerts = [0, 0, 0, 0, 1, 0, 1, 0, 0, 1, 0, 1, 1, 1, 1, 1];
             uint[] quadIdx = [0u, 1, 2, 2, 1, 3];
             _textQuadVB = driver.CreateBuffer(new BufferDescriptor { Size = (nuint)(quadVerts.Length * 4), Usage = BufferUsage.Vertex | BufferUsage.CopyDst });
@@ -146,7 +157,7 @@ public sealed class TextRenderSystem
         if (texts.Count == 0) return;
 
         // Orthographic projection
-        float aspect = (float)ws.Width / ws.Height;
+        float aspect = (float)ctx.Width / ctx.Height;
         float halfH = 5f;
         float halfW = halfH * aspect;
         var projection = Matrix4x4.CreateOrthographicOffCenter(-halfW, halfW, -halfH, halfH, -1f, 1f);
@@ -156,7 +167,7 @@ public sealed class TextRenderSystem
         uniformData[0].Projection = projection;
         _textUniformBuffer!.UploadData<TextUniforms>(uniformData.AsSpan());
 
-        // Build vertex data: each char = 1 quad = 4 vertices (pos2 + uv2) + 6 indices
+        // Build vertex data
         float scale = 1f / _fontAtlas.FontSize;
         var vertices = new List<float>();
         var indices = new List<uint>();
@@ -164,15 +175,12 @@ public sealed class TextRenderSystem
         foreach (var (text, color, worldMat) in texts)
         {
             float cursorX = 0;
-            // Transform origin position from world space
             var origin = Vector3.Transform(Vector3.Zero, worldMat);
 
             foreach (var ch in text)
             {
                 if (!_fontAtlas!.Glyphs.TryGetValue(ch, out var glyph))
-                {
                     continue;
-                }
 
                 float x0 = origin.X + cursorX + glyph.Offset.X * scale;
                 float y0 = origin.Y - glyph.Size.Y * scale + glyph.Offset.Y * scale;
@@ -192,7 +200,6 @@ public sealed class TextRenderSystem
 
         if (vertices.Count == 0) return;
 
-        // Upload vertex data (recreate dynamic buffer each frame)
         var dynamicVB = driver.CreateBuffer(new BufferDescriptor
         {
             Size = (nuint)(vertices.Count * sizeof(float)),
@@ -207,22 +214,21 @@ public sealed class TextRenderSystem
         });
         dynamicIB.UploadData<uint>(indices.ToArray());
 
-        // Add text pass to shared RenderGraph
         var graph = context.RenderGraph;
-        graph.AddPass("TextPass", setup: pass =>
+        graph.AddPass($"{ctx.Prefix}Text", setup: pass =>
         {
-            var sceneColor = pass.ImportTexture("SceneColor", new TextureDescriptor
+            var sceneColor = pass.ImportTexture(ctx.SceneColorName, new TextureDescriptor
             {
-                Width = ws.Width,
-                Height = ws.Height,
+                Width = ctx.Width,
+                Height = ctx.Height,
                 Format = DriverPixelFormat.RGBA16Float,
                 Usage = TextureUsage.RenderAttachment | TextureUsage.ShaderBinding,
             });
             pass.WriteTexture(sceneColor);
             pass.ColorAttachment(sceneColor, DriverLoadAction.Load, DriverStoreAction.Store);
-        }, execute: ctx =>
+        }, execute: exeCtx =>
         {
-            var encoder = ctx.Encoder;
+            var encoder = exeCtx.Encoder;
             encoder.SetPipeline(_textPipeline!);
             encoder.SetBindingSet(0, _textBindingSet!);
             encoder.SetVertexBuffer(0, dynamicVB);

@@ -3,6 +3,7 @@ using Kilo.Rendering.RenderGraph;
 using Kilo.Rendering.Meshes;
 using Kilo.Rendering.Materials;
 using Kilo.Rendering.Animation;
+using Kilo.Rendering.Particles;
 using Kilo.Rendering.Text;
 using Kilo.Rendering.Scene;
 
@@ -30,4 +31,5 @@ public sealed class RenderContext
     public ScreenshotState Screenshot { get; } = new();
     public SpriteRenderState Sprite { get; } = new();
     public PostProcessState PostProcess { get; } = new();
+    public ParticleSystemState Particles { get; } = new();
 }

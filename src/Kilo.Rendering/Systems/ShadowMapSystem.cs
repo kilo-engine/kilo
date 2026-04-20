@@ -131,6 +131,8 @@ public sealed class ShadowMapSystem
         }
 
         // Add shadow pass to shared RenderGraph
+        // Import the persistent shadow depth texture (registered as "ShadowDepth" in SceneInitializer)
+        // so the shadow map writes to the same GPU texture that materials sample from.
         var graph = context.RenderGraph;
         graph.AddPass("ShadowMap", setup: pass =>
         {

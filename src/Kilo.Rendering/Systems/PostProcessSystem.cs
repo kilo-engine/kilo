@@ -3,14 +3,14 @@ using System.Runtime.InteropServices;
 using Kilo.ECS;
 using Kilo.Rendering.Driver;
 using Kilo.Rendering.RenderGraph;
+using Kilo.Rendering.Scene;
 using Kilo.Rendering.Shaders;
 
 namespace Kilo.Rendering;
 
 /// <summary>
 /// Post-processing system that applies Bloom, ToneMapping, and FXAA.
-/// Runs after TextRenderSystem, before EndFrameSystem.
-/// All intermediate textures are persistent (created once, recreated on resize).
+/// All intermediate textures are persistent per-camera (created once, recreated on resize).
 /// </summary>
 public sealed class PostProcessSystem
 {
@@ -40,33 +40,53 @@ public sealed class PostProcessSystem
 
     private const int WorkgroupSize = 16;
 
+    /// <summary>Backward-compatible entry point with default screen context.</summary>
     public void Update(KiloWorld world)
+    {
+        var ws = world.GetResource<WindowSize>();
+        var scene = world.GetResource<GpuSceneData>();
+        var ctx = new CameraRenderContext(new ActiveCameraEntry
+        {
+            CameraData = scene.PendingCamera,
+            Target = CameraTarget.Screen,
+            CameraType = CameraType.Scene,
+            RenderWidth = ws.Width,
+            RenderHeight = ws.Height,
+            PostProcessEnabled = true,
+        });
+        AddPostProcessPasses(ctx, world);
+    }
+
+    public void AddPostProcessPasses(CameraRenderContext ctx, KiloWorld world)
     {
         var context = world.GetResource<RenderContext>();
         var driver = context.Driver;
-        var ws = world.GetResource<WindowSize>();
         var settings = world.GetResource<RenderSettings>();
         var pp = context.PostProcess;
         var graph = context.RenderGraph;
 
-        if (ws.Width <= 0 || ws.Height <= 0) return;
-
         // Lazy init GPU resources (pipelines, sampler, params buffer)
         if (!pp.Initialized)
         {
-            InitPipelines(context, driver, pp);
+            InitPipelinesStatic(context, driver, pp);
             pp.Initialized = true;
         }
 
-        // Ensure intermediate textures exist and match window size
-        EnsureTextures(driver, pp, ws.Width, ws.Height);
+        // Get per-camera textures
+        var camTex = pp.GetCameraTextures(ctx.Prefix);
+        camTex.EnsureBloomTextures(driver, ctx.Width, ctx.Height);
 
-        // Register all intermediate textures with the RenderGraph
-        graph.RegisterExternalTexture("SceneColor", pp.SceneColorTexture!);
-        graph.RegisterExternalTexture("BrightExtract", pp.BrightExtractTexture!);
-        graph.RegisterExternalTexture("BloomBlurH", pp.BloomBlurHTexture!);
-        graph.RegisterExternalTexture("BloomBlurV", pp.BloomBlurVTexture!);
-        graph.RegisterExternalTexture("ToneMapped", pp.ToneMappedTexture!);
+        string sceneColorName = ctx.SceneColorName;
+        string brightExtractName = $"{ctx.Prefix}BrightExtract";
+        string bloomBlurHName = $"{ctx.Prefix}BloomBlurH";
+        string bloomBlurVName = $"{ctx.Prefix}BloomBlurV";
+        string toneMappedName = ctx.ToneMappedName;
+
+        // Register all intermediate textures
+        graph.RegisterExternalTexture(brightExtractName, camTex.BrightExtractTexture!);
+        graph.RegisterExternalTexture(bloomBlurHName, camTex.BloomBlurHTexture!);
+        graph.RegisterExternalTexture(bloomBlurVName, camTex.BloomBlurVTexture!);
+        graph.RegisterExternalTexture(toneMappedName, camTex.ToneMappedTexture!);
 
         // Upload params
         var paramData = new PostProcessParams[1];
@@ -76,58 +96,50 @@ public sealed class PostProcessSystem
         paramData[0].ToneMapEnabled = settings.ToneMappingEnabled ? 1f : 0f;
         pp.ParamsBuffer!.UploadData<PostProcessParams>(paramData.AsSpan());
 
-        // Determine pass chain
         bool bloom = settings.BloomEnabled;
         bool tonemap = settings.ToneMappingEnabled;
         bool fxaa = settings.FxaaEnabled;
 
         if (!bloom && !tonemap && !fxaa)
         {
-            AddBlitToBackbuffer(graph, driver, ws, pp, "SceneColor");
+            AddBlitToTarget(graph, driver, ctx, pp, sceneColorName);
             return;
         }
 
         if (bloom)
         {
-            AddBloomPasses(graph, driver, ws, pp);
+            AddBloomPasses(graph, driver, ctx, pp, camTex, sceneColorName, brightExtractName, bloomBlurHName, bloomBlurVName);
         }
 
-        // Composite+ToneMap always renders to ToneMapped or Backbuffer
-        string compositeInput = bloom ? "BloomBlurV" : "SceneColor";
+        string compositeInput = bloom ? bloomBlurVName : sceneColorName;
 
         if (fxaa)
         {
-            // Composite+ToneMap → ToneMapped, then FXAA → Backbuffer
-            AddCompositeToneMapPass(graph, driver, ws, pp, compositeInput);
-            AddFxaaPass(graph, driver, ws, pp);
+            AddCompositeToneMapPass(graph, driver, ctx, pp, camTex, sceneColorName, compositeInput, toneMappedName);
+            AddFxaaPass(graph, driver, ctx, pp, toneMappedName);
         }
         else if (tonemap)
         {
-            // Composite+ToneMap → Backbuffer directly
-            AddCompositeToneMapToBackbuffer(graph, driver, ws, pp, compositeInput);
+            AddCompositeToneMapPass(graph, driver, ctx, pp, camTex, sceneColorName, compositeInput, toneMappedName);
+            AddBlitToTarget(graph, driver, ctx, pp, toneMappedName);
         }
         else if (bloom)
         {
-            // Bloom only, no tonemap: blit SceneColor+bloom → Backbuffer
-            // Just blit SceneColor for now (bloom is additive in composite)
-            AddBlitToBackbuffer(graph, driver, ws, pp, "SceneColor");
+            AddBlitToTarget(graph, driver, ctx, pp, sceneColorName);
         }
     }
 
-    private static void InitPipelines(RenderContext context, IRenderDriver driver, PostProcessState pp)
+    public static void InitPipelinesStatic(RenderContext context, IRenderDriver driver, PostProcessState pp)
     {
-        // Bloom extract compute pipeline
         var bloomExtractShader = driver.CreateComputeShaderModule(PostProcessShaders.BloomExtractWGSL, "main");
         pp.BloomExtractPipeline = driver.CreateComputePipeline(bloomExtractShader, "main");
 
-        // Bloom blur compute pipelines
         var blurHShader = driver.CreateComputeShaderModule(PostProcessShaders.BloomBlurHWGSL, "main");
         pp.BloomBlurHPipeline = driver.CreateComputePipeline(blurHShader, "main");
 
         var blurVShader = driver.CreateComputeShaderModule(PostProcessShaders.BloomBlurVWGSL, "main");
         pp.BloomBlurVPipeline = driver.CreateComputePipeline(blurVShader, "main");
 
-        // Composite + ToneMap render pipeline (fullscreen triangle, no vertex buffer)
         var compositeVS = context.ShaderCache.GetOrCreateShader(driver, PostProcessShaders.CompositeToneMapWGSL, "vs_main");
         var compositeFS = context.ShaderCache.GetOrCreateShader(driver, PostProcessShaders.CompositeToneMapWGSL, "fs_main");
         pp.CompositeToneMapPipeline = driver.CreateRenderPipeline(new RenderPipelineDescriptor
@@ -139,7 +151,6 @@ public sealed class PostProcessSystem
             VertexBuffers = [],
         });
 
-        // FXAA render pipeline (outputs to swapchain format)
         var fxaaVS = context.ShaderCache.GetOrCreateShader(driver, PostProcessShaders.FxaaWGSL, "vs_main");
         var fxaaFS = context.ShaderCache.GetOrCreateShader(driver, PostProcessShaders.FxaaWGSL, "fs_main");
         pp.FxaaPipeline = driver.CreateRenderPipeline(new RenderPipelineDescriptor
@@ -151,7 +162,6 @@ public sealed class PostProcessSystem
             VertexBuffers = [],
         });
 
-        // Blit pipeline (passthrough, outputs to swapchain format)
         var blitVS = context.ShaderCache.GetOrCreateShader(driver, PostProcessShaders.FullscreenBlitWGSL, "vs_main");
         var blitFS = context.ShaderCache.GetOrCreateShader(driver, PostProcessShaders.FullscreenBlitWGSL, "fs_main");
         pp.BlitPipeline = driver.CreateRenderPipeline(new RenderPipelineDescriptor
@@ -163,14 +173,38 @@ public sealed class PostProcessSystem
             VertexBuffers = [],
         });
 
-        // Shared linear sampler
+        // Overlay blit: same shader but with alpha blending for UI overlay compositing
+        pp.OverlayBlitPipeline = driver.CreateRenderPipeline(new RenderPipelineDescriptor
+        {
+            VertexShader = blitVS,
+            FragmentShader = blitFS,
+            Topology = DriverPrimitiveTopology.TriangleList,
+            ColorTargets = [new ColorTargetDescriptor
+            {
+                Format = driver.SwapchainFormat,
+                Blend = new BlendStateDescriptor
+                {
+                    Color = new BlendComponentDescriptor
+                    {
+                        SrcFactor = DriverBlendFactor.SrcAlpha,
+                        DstFactor = DriverBlendFactor.OneMinusSrcAlpha,
+                    },
+                    Alpha = new BlendComponentDescriptor
+                    {
+                        SrcFactor = DriverBlendFactor.One,
+                        DstFactor = DriverBlendFactor.OneMinusSrcAlpha,
+                    }
+                }
+            }],
+            VertexBuffers = [],
+        });
+
         pp.LinearSampler = driver.CreateSampler(new SamplerDescriptor
         {
             MinFilter = FilterMode.Linear,
             MagFilter = FilterMode.Linear,
         });
 
-        // Uniform buffer for params
         pp.ParamsBuffer = driver.CreateBuffer(new BufferDescriptor
         {
             Size = 256,
@@ -178,173 +212,117 @@ public sealed class PostProcessSystem
         });
     }
 
-    private static void EnsureTextures(IRenderDriver driver, PostProcessState pp, int width, int height)
+    private static void AddBloomPasses(RenderGraph.RenderGraph graph, IRenderDriver driver,
+        CameraRenderContext ctx, PostProcessState pp, PerCameraTextures camTex,
+        string sceneColorName, string brightExtractName, string bloomBlurHName, string bloomBlurVName)
     {
-        if (pp.BrightExtractTexture != null && pp.TextureWidth == width && pp.TextureHeight == height)
-            return;
-
-        // Dispose old textures (SceneColor is managed by RenderSystem, not disposed here)
-        pp.BrightExtractTexture?.Dispose();
-        pp.BloomBlurHTexture?.Dispose();
-        pp.BloomBlurVTexture?.Dispose();
-        pp.ToneMappedTexture?.Dispose();
-        pp.BrightExtractStorageView?.Dispose();
-        pp.BloomBlurHStorageView?.Dispose();
-        pp.BloomBlurVStorageView?.Dispose();
-
-        // Bloom intermediate textures (RGBA16Float with Storage usage for compute)
-        var hdrDesc = new TextureDescriptor
-        {
-            Width = width,
-            Height = height,
-            Format = DriverPixelFormat.RGBA16Float,
-            Usage = TextureUsage.Storage | TextureUsage.ShaderBinding,
-        };
-
-        pp.BrightExtractTexture = driver.CreateTexture(hdrDesc);
-        pp.BrightExtractStorageView = driver.CreateTextureView(pp.BrightExtractTexture, new TextureViewDescriptor
-        {
-            Format = DriverPixelFormat.RGBA16Float,
-            Dimension = TextureViewDimension.View2D,
-        });
-
-        pp.BloomBlurHTexture = driver.CreateTexture(hdrDesc);
-        pp.BloomBlurHStorageView = driver.CreateTextureView(pp.BloomBlurHTexture, new TextureViewDescriptor
-        {
-            Format = DriverPixelFormat.RGBA16Float,
-            Dimension = TextureViewDimension.View2D,
-        });
-
-        pp.BloomBlurVTexture = driver.CreateTexture(hdrDesc);
-        pp.BloomBlurVStorageView = driver.CreateTextureView(pp.BloomBlurVTexture, new TextureViewDescriptor
-        {
-            Format = DriverPixelFormat.RGBA16Float,
-            Dimension = TextureViewDimension.View2D,
-        });
-
-        // ToneMapped output (RGBA8Unorm)
-        pp.ToneMappedTexture = driver.CreateTexture(new TextureDescriptor
-        {
-            Width = width,
-            Height = height,
-            Format = DriverPixelFormat.RGBA8Unorm,
-            Usage = TextureUsage.RenderAttachment | TextureUsage.ShaderBinding,
-        });
-
-        pp.TextureWidth = width;
-        pp.TextureHeight = height;
-    }
-
-    private static void AddBloomPasses(RenderGraph.RenderGraph graph, IRenderDriver driver, WindowSize ws, PostProcessState pp)
-    {
-        uint wgX = (uint)((ws.Width + WorkgroupSize - 1) / WorkgroupSize);
-        uint wgY = (uint)((ws.Height + WorkgroupSize - 1) / WorkgroupSize);
+        uint wgX = (uint)((ctx.Width + WorkgroupSize - 1) / WorkgroupSize);
+        uint wgY = (uint)((ctx.Height + WorkgroupSize - 1) / WorkgroupSize);
 
         // BloomExtract: SceneColor → BrightExtract
-        graph.AddComputePass("BloomExtract", setup: cp =>
+        graph.AddComputePass($"{ctx.Prefix}BloomExtract", setup: cp =>
         {
-            var sceneColor = cp.ImportTexture("SceneColor", new TextureDescriptor
+            var sceneColor = cp.ImportTexture(sceneColorName, new TextureDescriptor
             {
-                Width = ws.Width, Height = ws.Height,
+                Width = ctx.Width, Height = ctx.Height,
                 Format = DriverPixelFormat.RGBA16Float,
                 Usage = TextureUsage.ShaderBinding,
             });
             cp.ReadTexture(sceneColor);
 
-            var brightExtract = cp.ImportTexture("BrightExtract", new TextureDescriptor
+            var brightExtract = cp.ImportTexture(brightExtractName, new TextureDescriptor
             {
-                Width = ws.Width, Height = ws.Height,
+                Width = ctx.Width, Height = ctx.Height,
                 Format = DriverPixelFormat.RGBA16Float,
                 Usage = TextureUsage.Storage | TextureUsage.ShaderBinding,
             });
             cp.WriteTexture(brightExtract);
-        }, execute: ctx =>
+        }, execute: exeCtx =>
         {
-            var sceneColorView = ctx.GetTextureView("SceneColor");
-
+            var sceneColorView = exeCtx.GetTextureView(sceneColorName);
             var bindingSet = driver.CreateBindingSetForComputePipeline(
                 pp.BloomExtractPipeline!, 0,
                 textures: [new TextureBinding { Binding = 0, TextureView = sceneColorView }],
-                storageTextures: [new StorageTextureBinding { Binding = 1, TextureView = pp.BrightExtractStorageView!, Format = DriverPixelFormat.RGBA16Float }],
+                storageTextures: [new StorageTextureBinding { Binding = 1, TextureView = camTex.BrightExtractStorageView!, Format = DriverPixelFormat.RGBA16Float }],
                 uniformBuffers: [new UniformBufferBinding { Binding = 2, Buffer = pp.ParamsBuffer! }]);
 
-            ctx.Encoder.SetComputePipeline(pp.BloomExtractPipeline!);
-            ctx.Encoder.SetComputeBindingSet(0, bindingSet);
-            ctx.Encoder.Dispatch(wgX, wgY, 1);
+            exeCtx.Encoder.SetComputePipeline(pp.BloomExtractPipeline!);
+            exeCtx.Encoder.SetComputeBindingSet(0, bindingSet);
+            exeCtx.Encoder.Dispatch(wgX, wgY, 1);
         });
 
         // BloomBlurH: BrightExtract → BloomBlurH
-        graph.AddComputePass("BloomBlurH", setup: cp =>
+        graph.AddComputePass($"{ctx.Prefix}BloomBlurH", setup: cp =>
         {
-            var brightExtract = cp.ImportTexture("BrightExtract", new TextureDescriptor
+            var brightExtract = cp.ImportTexture(brightExtractName, new TextureDescriptor
             {
-                Width = ws.Width, Height = ws.Height,
+                Width = ctx.Width, Height = ctx.Height,
                 Format = DriverPixelFormat.RGBA16Float,
                 Usage = TextureUsage.Storage | TextureUsage.ShaderBinding,
             });
             cp.ReadTexture(brightExtract);
 
-            var blurH = cp.ImportTexture("BloomBlurH", new TextureDescriptor
+            var blurH = cp.ImportTexture(bloomBlurHName, new TextureDescriptor
             {
-                Width = ws.Width, Height = ws.Height,
+                Width = ctx.Width, Height = ctx.Height,
                 Format = DriverPixelFormat.RGBA16Float,
                 Usage = TextureUsage.Storage | TextureUsage.ShaderBinding,
             });
             cp.WriteTexture(blurH);
-        }, execute: ctx =>
+        }, execute: exeCtx =>
         {
-            var brightView = ctx.GetTextureView("BrightExtract");
-
+            var brightView = exeCtx.GetTextureView(brightExtractName);
             var bindingSet = driver.CreateBindingSetForComputePipeline(
                 pp.BloomBlurHPipeline!, 0,
                 textures: [new TextureBinding { Binding = 0, TextureView = brightView }],
-                storageTextures: [new StorageTextureBinding { Binding = 1, TextureView = pp.BloomBlurHStorageView!, Format = DriverPixelFormat.RGBA16Float }]);
+                storageTextures: [new StorageTextureBinding { Binding = 1, TextureView = camTex.BloomBlurHStorageView!, Format = DriverPixelFormat.RGBA16Float }]);
 
-            ctx.Encoder.SetComputePipeline(pp.BloomBlurHPipeline!);
-            ctx.Encoder.SetComputeBindingSet(0, bindingSet);
-            ctx.Encoder.Dispatch(wgX, wgY, 1);
+            exeCtx.Encoder.SetComputePipeline(pp.BloomBlurHPipeline!);
+            exeCtx.Encoder.SetComputeBindingSet(0, bindingSet);
+            exeCtx.Encoder.Dispatch(wgX, wgY, 1);
         });
 
         // BloomBlurV: BloomBlurH → BloomBlurV
-        graph.AddComputePass("BloomBlurV", setup: cp =>
+        graph.AddComputePass($"{ctx.Prefix}BloomBlurV", setup: cp =>
         {
-            var blurH = cp.ImportTexture("BloomBlurH", new TextureDescriptor
+            var blurH = cp.ImportTexture(bloomBlurHName, new TextureDescriptor
             {
-                Width = ws.Width, Height = ws.Height,
+                Width = ctx.Width, Height = ctx.Height,
                 Format = DriverPixelFormat.RGBA16Float,
                 Usage = TextureUsage.Storage | TextureUsage.ShaderBinding,
             });
             cp.ReadTexture(blurH);
 
-            var blurV = cp.ImportTexture("BloomBlurV", new TextureDescriptor
+            var blurV = cp.ImportTexture(bloomBlurVName, new TextureDescriptor
             {
-                Width = ws.Width, Height = ws.Height,
+                Width = ctx.Width, Height = ctx.Height,
                 Format = DriverPixelFormat.RGBA16Float,
                 Usage = TextureUsage.Storage | TextureUsage.ShaderBinding,
             });
             cp.WriteTexture(blurV);
-        }, execute: ctx =>
+        }, execute: exeCtx =>
         {
-            var blurHView = ctx.GetTextureView("BloomBlurH");
-
+            var blurHView = exeCtx.GetTextureView(bloomBlurHName);
             var bindingSet = driver.CreateBindingSetForComputePipeline(
                 pp.BloomBlurVPipeline!, 0,
                 textures: [new TextureBinding { Binding = 0, TextureView = blurHView }],
-                storageTextures: [new StorageTextureBinding { Binding = 1, TextureView = pp.BloomBlurVStorageView!, Format = DriverPixelFormat.RGBA16Float }]);
+                storageTextures: [new StorageTextureBinding { Binding = 1, TextureView = camTex.BloomBlurVStorageView!, Format = DriverPixelFormat.RGBA16Float }]);
 
-            ctx.Encoder.SetComputePipeline(pp.BloomBlurVPipeline!);
-            ctx.Encoder.SetComputeBindingSet(0, bindingSet);
-            ctx.Encoder.Dispatch(wgX, wgY, 1);
+            exeCtx.Encoder.SetComputePipeline(pp.BloomBlurVPipeline!);
+            exeCtx.Encoder.SetComputeBindingSet(0, bindingSet);
+            exeCtx.Encoder.Dispatch(wgX, wgY, 1);
         });
     }
 
-    private static void AddCompositeToneMapPass(RenderGraph.RenderGraph graph, IRenderDriver driver, WindowSize ws, PostProcessState pp, string bloomInput)
+    private static void AddCompositeToneMapPass(RenderGraph.RenderGraph graph, IRenderDriver driver,
+        CameraRenderContext ctx, PostProcessState pp, PerCameraTextures camTex,
+        string sceneColorName, string bloomInput, string toneMappedName)
     {
-        graph.AddPass("CompositeToneMap", setup: pass =>
+        graph.AddPass($"{ctx.Prefix}CompositeToneMap", setup: pass =>
         {
-            var sceneColor = pass.ImportTexture("SceneColor", new TextureDescriptor
+            var sceneColor = pass.ImportTexture(sceneColorName, new TextureDescriptor
             {
-                Width = ws.Width, Height = ws.Height,
+                Width = ctx.Width, Height = ctx.Height,
                 Format = DriverPixelFormat.RGBA16Float,
                 Usage = TextureUsage.RenderAttachment | TextureUsage.ShaderBinding,
             });
@@ -352,24 +330,24 @@ public sealed class PostProcessSystem
 
             var bloomBlur = pass.ImportTexture(bloomInput, new TextureDescriptor
             {
-                Width = ws.Width, Height = ws.Height,
+                Width = ctx.Width, Height = ctx.Height,
                 Format = DriverPixelFormat.RGBA16Float,
                 Usage = TextureUsage.ShaderBinding,
             });
             pass.ReadTexture(bloomBlur);
 
-            var toneMapped = pass.ImportTexture("ToneMapped", new TextureDescriptor
+            var toneMapped = pass.ImportTexture(toneMappedName, new TextureDescriptor
             {
-                Width = ws.Width, Height = ws.Height,
+                Width = ctx.Width, Height = ctx.Height,
                 Format = DriverPixelFormat.RGBA8Unorm,
                 Usage = TextureUsage.RenderAttachment | TextureUsage.ShaderBinding,
             });
             pass.WriteTexture(toneMapped);
             pass.ColorAttachment(toneMapped, DriverLoadAction.Clear, DriverStoreAction.Store);
-        }, execute: ctx =>
+        }, execute: exeCtx =>
         {
-            var sceneColorView = ctx.GetTextureView("SceneColor");
-            var bloomBlurView = ctx.GetTextureView(bloomInput);
+            var sceneColorView = exeCtx.GetTextureView(sceneColorName);
+            var bloomBlurView = exeCtx.GetTextureView(bloomInput);
 
             var bindingSet = driver.CreateBindingSetForPipeline(
                 pp.CompositeToneMapPipeline!, 0,
@@ -381,85 +359,81 @@ public sealed class PostProcessSystem
                 ],
                 samplers: [new SamplerBinding { Binding = 2, Sampler = pp.LinearSampler! }]);
 
-            ctx.Encoder.SetPipeline(pp.CompositeToneMapPipeline!);
-            ctx.Encoder.SetBindingSet(0, bindingSet);
-            ctx.Encoder.Draw(3);
+            exeCtx.Encoder.SetPipeline(pp.CompositeToneMapPipeline!);
+            exeCtx.Encoder.SetBindingSet(0, bindingSet);
+            exeCtx.Encoder.Draw(3);
         });
     }
 
-    private static void AddCompositeToneMapToBackbuffer(RenderGraph.RenderGraph graph, IRenderDriver driver, WindowSize ws, PostProcessState pp, string bloomInput)
+    private static void AddFxaaPass(RenderGraph.RenderGraph graph, IRenderDriver driver,
+        CameraRenderContext ctx, PostProcessState pp, string toneMappedName)
     {
-        AddCompositeToneMapPass(graph, driver, ws, pp, bloomInput);
-        AddBlitToBackbuffer(graph, driver, ws, pp, "ToneMapped");
-    }
-
-    private static void AddFxaaPass(RenderGraph.RenderGraph graph, IRenderDriver driver, WindowSize ws, PostProcessState pp)
-    {
-        graph.AddPass("FXAA", setup: pass =>
+        graph.AddPass($"{ctx.Prefix}FXAA", setup: pass =>
         {
-            var toneMapped = pass.ImportTexture("ToneMapped", new TextureDescriptor
+            var toneMapped = pass.ImportTexture(toneMappedName, new TextureDescriptor
             {
-                Width = ws.Width, Height = ws.Height,
+                Width = ctx.Width, Height = ctx.Height,
                 Format = DriverPixelFormat.RGBA8Unorm,
                 Usage = TextureUsage.RenderAttachment | TextureUsage.ShaderBinding,
             });
             pass.ReadTexture(toneMapped);
 
-            var backbuffer = pass.ImportTexture("Backbuffer", new TextureDescriptor
+            var backbuffer = pass.ImportTexture(ctx.OutputName, new TextureDescriptor
             {
-                Width = ws.Width, Height = ws.Height,
+                Width = ctx.Width, Height = ctx.Height,
                 Format = driver.SwapchainFormat,
                 Usage = TextureUsage.RenderAttachment,
             });
             pass.WriteTexture(backbuffer);
             pass.ColorAttachment(backbuffer, DriverLoadAction.Clear, DriverStoreAction.Store);
-        }, execute: ctx =>
+        }, execute: exeCtx =>
         {
-            var toneMappedView = ctx.GetTextureView("ToneMapped");
+            var toneMappedView = exeCtx.GetTextureView(toneMappedName);
 
             var bindingSet = driver.CreateBindingSetForPipeline(
                 pp.FxaaPipeline!, 0,
                 textures: [new TextureBinding { Binding = 0, TextureView = toneMappedView }],
                 samplers: [new SamplerBinding { Binding = 1, Sampler = pp.LinearSampler! }]);
 
-            ctx.Encoder.SetPipeline(pp.FxaaPipeline!);
-            ctx.Encoder.SetBindingSet(0, bindingSet);
-            ctx.Encoder.Draw(3);
+            exeCtx.Encoder.SetPipeline(pp.FxaaPipeline!);
+            exeCtx.Encoder.SetBindingSet(0, bindingSet);
+            exeCtx.Encoder.Draw(3);
         });
     }
 
-    private static void AddBlitToBackbuffer(RenderGraph.RenderGraph graph, IRenderDriver driver, WindowSize ws, PostProcessState pp, string sourceName)
+    private static void AddBlitToTarget(RenderGraph.RenderGraph graph, IRenderDriver driver,
+        CameraRenderContext ctx, PostProcessState pp, string sourceName)
     {
-        graph.AddPass("BlitToBackbuffer", setup: pass =>
+        graph.AddPass($"{ctx.Prefix}Blit", setup: pass =>
         {
             var source = pass.ImportTexture(sourceName, new TextureDescriptor
             {
-                Width = ws.Width, Height = ws.Height,
-                Format = sourceName == "SceneColor" ? DriverPixelFormat.RGBA16Float : DriverPixelFormat.RGBA8Unorm,
+                Width = ctx.Width, Height = ctx.Height,
+                Format = sourceName.Contains("SceneColor") ? DriverPixelFormat.RGBA16Float : DriverPixelFormat.RGBA8Unorm,
                 Usage = TextureUsage.ShaderBinding,
             });
             pass.ReadTexture(source);
 
-            var backbuffer = pass.ImportTexture("Backbuffer", new TextureDescriptor
+            var backbuffer = pass.ImportTexture(ctx.OutputName, new TextureDescriptor
             {
-                Width = ws.Width, Height = ws.Height,
+                Width = ctx.Width, Height = ctx.Height,
                 Format = driver.SwapchainFormat,
                 Usage = TextureUsage.RenderAttachment,
             });
             pass.WriteTexture(backbuffer);
             pass.ColorAttachment(backbuffer, DriverLoadAction.Clear, DriverStoreAction.Store);
-        }, execute: ctx =>
+        }, execute: exeCtx =>
         {
-            var sourceView = ctx.GetTextureView(sourceName);
+            var sourceView = exeCtx.GetTextureView(sourceName);
 
             var bindingSet = driver.CreateBindingSetForPipeline(
                 pp.BlitPipeline!, 0,
                 textures: [new TextureBinding { Binding = 0, TextureView = sourceView }],
                 samplers: [new SamplerBinding { Binding = 1, Sampler = pp.LinearSampler! }]);
 
-            ctx.Encoder.SetPipeline(pp.BlitPipeline!);
-            ctx.Encoder.SetBindingSet(0, bindingSet);
-            ctx.Encoder.Draw(3);
+            exeCtx.Encoder.SetPipeline(pp.BlitPipeline!);
+            exeCtx.Encoder.SetBindingSet(0, bindingSet);
+            exeCtx.Encoder.Draw(3);
         });
     }
 }

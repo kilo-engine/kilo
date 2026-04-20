@@ -34,6 +34,37 @@ public sealed class GpuSceneData
     /// <summary>Pending camera data, written by CameraPrepareSystem, finalized by LightPrepareSystem.</summary>
     public CameraData PendingCamera;
 
+    /// <summary>
+    /// Per-camera buffer override for group 0 (camera uniform).
+    /// Set by each camera's Forward/Particle pass execute callback to avoid
+    /// the shared CameraBuffer being overwritten by multiple cameras.
+    /// When null, EmitDraw falls back to material.BindingSets[0].
+    /// </summary>
+    public IBuffer? CurrentCameraBuffer;
+
+    /// <summary>
+    /// Cache for per-camera binding sets. Keyed by (pipeline, cameraBuffer) because
+    /// WebGPU implicit bind group layouts are unique per pipeline — a binding set
+    /// created from one pipeline's layout is incompatible with another's.
+    /// </summary>
+    private readonly Dictionary<(IRenderPipeline pipeline, IBuffer buffer), IBindingSet> _cameraBindingCache = [];
+
+    /// <summary>
+    /// Gets or creates a binding set for group 0 using the per-camera buffer and
+    /// the given pipeline's layout. Cached to avoid per-frame allocation.
+    /// </summary>
+    public IBindingSet GetOrCreateCameraBindingSet(IRenderPipeline pipeline, IBuffer cameraBuffer, IRenderDriver driver)
+    {
+        var key = (pipeline, cameraBuffer);
+        if (!_cameraBindingCache.TryGetValue(key, out var bindingSet))
+        {
+            bindingSet = driver.CreateBindingSetForPipeline(pipeline, 0,
+                [new UniformBufferBinding { Buffer = cameraBuffer, Binding = 0 }]);
+            _cameraBindingCache[key] = bindingSet;
+        }
+        return bindingSet;
+    }
+
     public DrawData GetDraw(int index) => _drawData[index];
 
     public void SetDrawData(DrawData[] data, int count, int opaqueCount)
@@ -61,7 +92,11 @@ public sealed class GpuSceneData
         encoder.SetPipeline(material.Pipeline);
         encoder.SetVertexBuffer(0, mesh.VertexBuffer);
         encoder.SetIndexBuffer(mesh.IndexBuffer);
-        encoder.SetBindingSet(0, material.BindingSets[0]);
+
+        var cameraBindingSet = CurrentCameraBuffer != null
+            ? GetOrCreateCameraBindingSet(material.Pipeline, CurrentCameraBuffer, context.Driver)
+            : material.BindingSets[0];
+        encoder.SetBindingSet(0, cameraBindingSet);
         encoder.SetBindingSet(1, material.BindingSets[1], (uint)(index * ObjectData.Size));
         encoder.SetBindingSet(2, material.BindingSets[2]);
         if (material.BindingSets.Length > 3)

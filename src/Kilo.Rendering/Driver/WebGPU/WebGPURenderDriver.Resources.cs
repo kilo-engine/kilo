@@ -529,6 +529,49 @@ public sealed unsafe partial class WebGPURenderDriver
         return new WebGPUBindingSet(Wgpu, bindGroup);
     }
 
+    public IBindingSet CreateBindingSetForPipeline(IRenderPipeline pipeline, int groupIndex, UniformBufferBinding[] uniformBuffers, StorageBufferBinding[] storageBuffers)
+    {
+        var wgpuPipeline = ((WebGPUPipeline)pipeline).NativePtr;
+        var layout = Wgpu.RenderPipelineGetBindGroupLayout(wgpuPipeline, (uint)groupIndex);
+
+        int totalBindings = uniformBuffers.Length + storageBuffers.Length;
+        var bgEntries = (BindGroupEntry*)NativeMemory.Alloc((nuint)(totalBindings * sizeof(BindGroupEntry)));
+
+        int idx = 0;
+        foreach (var buf in uniformBuffers)
+        {
+            bgEntries[idx++] = new BindGroupEntry
+            {
+                Binding = (uint)buf.Binding,
+                Buffer = ((WebGPUBuffer)buf.Buffer).NativePtr,
+                Offset = 0,
+                Size = buf.Buffer.Size,
+            };
+        }
+        foreach (var sb in storageBuffers)
+        {
+            bgEntries[idx++] = new BindGroupEntry
+            {
+                Binding = (uint)sb.Binding,
+                Buffer = ((WebGPUBuffer)sb.Buffer).NativePtr,
+                Offset = 0,
+                Size = sb.Buffer.Size,
+            };
+        }
+
+        var bgDesc = new BindGroupDescriptor
+        {
+            Layout = layout,
+            Entries = bgEntries,
+            EntryCount = (uint)totalBindings,
+        };
+        var bindGroup = Wgpu.DeviceCreateBindGroup(Device, in bgDesc);
+        NativeMemory.Free(bgEntries);
+        Wgpu.BindGroupLayoutRelease(layout);
+
+        return new WebGPUBindingSet(Wgpu, bindGroup);
+    }
+
     public IRenderPipeline CreateRenderPipelineWithDynamicUniforms(RenderPipelineDescriptor descriptor, nuint minBindingSize, int groupIndex = 0, int bindGroupCount = 1)
     {
         // Step 1: Build native descriptor (same as CreateRenderPipeline)
@@ -819,6 +862,65 @@ public sealed unsafe partial class WebGPURenderDriver
                 Buffer = ((WebGPUBuffer)buf.Buffer).NativePtr,
                 Offset = 0,
                 Size = buf.Buffer.Size,
+            };
+        }
+
+        var bgDesc = new BindGroupDescriptor
+        {
+            Layout = layout,
+            Entries = bgEntries,
+            EntryCount = (uint)totalBindings,
+        };
+        var bindGroup = Wgpu.DeviceCreateBindGroup(Device, in bgDesc);
+        NativeMemory.Free(bgEntries);
+        Wgpu.BindGroupLayoutRelease(layout);
+
+        return new WebGPUBindingSet(Wgpu, bindGroup);
+    }
+
+    public IBindingSet CreateBindingSetForComputePipeline(IComputePipeline pipeline, int groupIndex, StorageBufferBinding[] storageBuffers, UniformBufferBinding[] uniformBuffers, TextureBinding[] textures, SamplerBinding[] samplers)
+    {
+        var wgpuPipeline = ((WebGPUComputePipeline)pipeline).NativePtr;
+        var layout = Wgpu.ComputePipelineGetBindGroupLayout(wgpuPipeline, (uint)groupIndex);
+
+        int totalBindings = storageBuffers.Length + uniformBuffers.Length + textures.Length + samplers.Length;
+        var bgEntries = (BindGroupEntry*)NativeMemory.Alloc((nuint)(totalBindings * sizeof(BindGroupEntry)));
+
+        int idx = 0;
+        foreach (var sb in storageBuffers)
+        {
+            bgEntries[idx++] = new BindGroupEntry
+            {
+                Binding = (uint)sb.Binding,
+                Buffer = ((WebGPUBuffer)sb.Buffer).NativePtr,
+                Offset = 0,
+                Size = sb.Buffer.Size,
+            };
+        }
+        foreach (var buf in uniformBuffers)
+        {
+            bgEntries[idx++] = new BindGroupEntry
+            {
+                Binding = (uint)buf.Binding,
+                Buffer = ((WebGPUBuffer)buf.Buffer).NativePtr,
+                Offset = 0,
+                Size = buf.Buffer.Size,
+            };
+        }
+        foreach (var t in textures)
+        {
+            bgEntries[idx++] = new BindGroupEntry
+            {
+                Binding = (uint)t.Binding,
+                TextureView = ((WebGPUTextureView)t.TextureView).NativePtr,
+            };
+        }
+        foreach (var s in samplers)
+        {
+            bgEntries[idx++] = new BindGroupEntry
+            {
+                Binding = (uint)s.Binding,
+                Sampler = ((WebGPUSampler)s.Sampler).NativePtr,
             };
         }
 

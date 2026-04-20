@@ -3,6 +3,7 @@ using System.Runtime.InteropServices;
 using Kilo.ECS;
 using Kilo.Rendering.Driver;
 using Kilo.Rendering.RenderGraph;
+using Kilo.Rendering.Scene;
 
 namespace Kilo.Rendering;
 
@@ -29,14 +30,28 @@ public struct SpriteInstanceData
 
 public sealed class SpriteRenderSystem
 {
+    /// <summary>Backward-compatible entry point with default screen context.</summary>
     public void Update(KiloWorld world)
+    {
+        var ws = world.GetResource<WindowSize>();
+        var ctx = new CameraRenderContext(new ActiveCameraEntry
+        {
+            Target = CameraTarget.Screen,
+            CameraType = CameraType.Scene,
+            RenderWidth = ws.Width,
+            RenderHeight = ws.Height,
+        });
+        AddSpritePass(ctx, world);
+    }
+
+    public void AddSpritePass(CameraRenderContext ctx, KiloWorld world)
     {
         var context = world.GetResource<RenderContext>();
         var driver = context.Driver;
-        var windowSize = world.GetResource<WindowSize>();
+        var graph = context.RenderGraph;
 
         // Orthographic projection
-        float aspect = (float)windowSize.Width / windowSize.Height;
+        float aspect = (float)ctx.Width / ctx.Height;
         const float HalfHeight = 5f;
         float halfW = HalfHeight * aspect;
         var projection = Matrix4x4.CreateOrthographicOffCenter(-halfW, halfW, -HalfHeight, HalfHeight, -1f, 1f);
@@ -80,15 +95,12 @@ public sealed class SpriteRenderSystem
             context.Sprite.UniformBuffer.UploadData<SpriteInstanceData>(instanceData.AsSpan());
         }
 
-        // Add sprite pass to the shared RenderGraph
-        var graph = context.RenderGraph;
-
-        graph.AddPass("SpritePass", setup: pass =>
+        graph.AddPass($"{ctx.Prefix}Sprite", setup: pass =>
         {
-            var sceneColor = pass.ImportTexture("SceneColor", new TextureDescriptor
+            var sceneColor = pass.ImportTexture(ctx.SceneColorName, new TextureDescriptor
             {
-                Width = windowSize.Width,
-                Height = windowSize.Height,
+                Width = ctx.Width,
+                Height = ctx.Height,
                 Format = DriverPixelFormat.RGBA16Float,
                 Usage = TextureUsage.RenderAttachment | TextureUsage.ShaderBinding,
             });
@@ -104,9 +116,9 @@ public sealed class SpriteRenderSystem
                 });
                 pass.ReadBuffer(uniformBufferHandle);
             }
-        }, execute: ctx =>
+        }, execute: exeCtx =>
         {
-            var encoder = ctx.Encoder;
+            var encoder = exeCtx.Encoder;
             encoder.SetPipeline(context.Sprite.Pipeline!);
             encoder.SetVertexBuffer(0, context.Sprite.QuadVertexBuffer!);
             encoder.SetIndexBuffer(context.Sprite.QuadIndexBuffer!);

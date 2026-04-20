@@ -200,6 +200,11 @@ public sealed class MockRenderDriver : IRenderDriver
         return new MockBindingSet();
     }
 
+    public IBindingSet CreateBindingSetForPipeline(IRenderPipeline pipeline, int groupIndex, UniformBufferBinding[] uniformBuffers, StorageBufferBinding[] storageBuffers)
+    {
+        return new MockBindingSet();
+    }
+
     public IRenderPipeline CreateRenderPipelineWithDynamicUniforms(RenderPipelineDescriptor descriptor, nuint minBindingSize, int groupIndex = 0, int bindGroupCount = 1)
     {
         return new MockRenderPipeline();
@@ -216,6 +221,11 @@ public sealed class MockRenderDriver : IRenderDriver
     }
 
     public IBindingSet CreateBindingSetForComputePipeline(IComputePipeline pipeline, int groupIndex, TextureBinding[] textures, StorageTextureBinding[] storageTextures, UniformBufferBinding[] uniformBuffers)
+    {
+        return new MockBindingSet();
+    }
+
+    public IBindingSet CreateBindingSetForComputePipeline(IComputePipeline pipeline, int groupIndex, StorageBufferBinding[] storageBuffers, UniformBufferBinding[] uniformBuffers, TextureBinding[] textures, SamplerBinding[] samplers)
     {
         return new MockBindingSet();
     }

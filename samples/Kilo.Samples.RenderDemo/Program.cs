@@ -26,6 +26,7 @@ using Kilo.Rendering.RenderGraph;
 using Kilo.Rendering.Meshes;
 using Kilo.Rendering.Materials;
 using Kilo.Rendering.Animation;
+using Kilo.Rendering.Particles;
 using Kilo.Rendering.Text;
 using Kilo.Rendering.Scene;
 using Kilo.Rendering.Shaders;
@@ -367,6 +368,30 @@ app.AddSystem(KiloStage.Startup, world =>
             .Set(new Sprite { Tint = spriteColors[i], Size = new Vector2(1, 1), TextureHandle = -1, ZIndex = i });
     }
 
+    // ── 粒子发射器 ──────────────────────────────────────────────────────────
+    var fireEffect = new ParticleEffect
+    {
+        SpawnRate = 60f,
+        MaxParticles = 500,
+        Lifetime = 1.5f,
+        LifetimeVariance = 0.5f,
+        InitialVelocity = new Vector3(0, 2f, 0),
+        SpeedVariance = 0.3f,
+        Spread = 0.5f,
+        BaseSize = 0.15f,
+        Gravity = new Vector3(0, -1f, 0),
+        Damping = 0.97f,
+    };
+    world.Entity("FireParticles")
+        .Set(new LocalTransform
+        {
+            Position = new Vector3(5, 0, 0),
+            Rotation = Quaternion.Identity,
+            Scale = Vector3.One
+        })
+        .Set(new LocalToWorld())
+        .Set(new ParticleEmitter { Effect = fireEffect, Active = true });
+
     // ── 平行光 + 相机 ─────────────────────────────────────────────────────
     world.Entity("Sun")
         .Set(new DirectionalLight
@@ -395,7 +420,7 @@ app.AddSystem(KiloStage.Startup, world =>
     world.Entity("Camera")
         .Set(new LocalTransform
         {
-            Position = new Vector3(0, 2, 10),
+            Position = new Vector3(0, 0, 12),
             Rotation = Quaternion.Identity,
             Scale = Vector3.One
         })
@@ -404,8 +429,56 @@ app.AddSystem(KiloStage.Startup, world =>
             FieldOfView = MathF.PI / 4,
             NearPlane = 0.1f,
             FarPlane = 100.0f,
-            IsActive = true
+            IsActive = true,
+            RenderLayers = RenderLayers.Meshes | RenderLayers.Particles,
         });
+
+    // ── UI 覆盖层相机（优先级高于主相机，后渲染） ──────────────────────────
+    world.Entity("OverlayCamera")
+        .Set(new LocalTransform
+        {
+            Position = Vector3.Zero,
+            Rotation = Quaternion.Identity,
+            Scale = Vector3.One
+        })
+        .Set(new Camera
+        {
+            FieldOfView = MathF.PI / 4,
+            NearPlane = 0.1f,
+            FarPlane = 100.0f,
+            IsActive = true,
+            Priority = 2,
+            CameraType = CameraType.UIOverlay,
+            Target = CameraTarget.Screen,
+            ClearSettings = CameraClearSettings.DontClear,
+            PostProcessEnabled = false,
+            RenderLayers = RenderLayers.Sprites | RenderLayers.Text,
+        });
+
+    // ── 俯视角小地图相机 ──────────────────────────────────────────────────
+    var minimapRT = new RenderTexture(256, 256, driver.SwapchainFormat);
+    world.Entity("MinimapCamera")
+        .Set(new LocalTransform
+        {
+            Position = new Vector3(0, 15, 0),
+            Rotation = Quaternion.CreateFromAxisAngle(Vector3.UnitX, -MathF.PI / 2f),
+            Scale = Vector3.One
+        })
+        .Set(new Camera
+        {
+            FieldOfView = MathF.PI / 3,
+            NearPlane = 0.1f,
+            FarPlane = 100.0f,
+            IsActive = true,
+            Priority = 0,
+            CameraType = CameraType.Scene,
+            Target = CameraTarget.RenderTexture,
+            RenderTexture = minimapRT,
+            ClearSettings = CameraClearSettings.SolidColor(new Vector4(0.1f, 0.1f, 0.12f, 1f)),
+            PostProcessEnabled = false,
+            RenderLayers = RenderLayers.Meshes | RenderLayers.Particles,
+        });
+    RenderDemoPlugin.SetMinimapRenderTexture(minimapRT);
 });
 
 // ── 每帧更新：相机控制 + 立方体旋转 + 精灵动画 + 输入日志 ──────────────────
@@ -422,8 +495,9 @@ app.AddSystem(KiloStage.Update, world =>
     // ── B 键切换 Compute Blur ─────────────────────────────────────────────
     if (input.IsKeyPressed((int)Key.B))
     {
-        BlurRenderSystem.BlurEnabled = !BlurRenderSystem.BlurEnabled;
-        Console.WriteLine($"[RenderDemo] Blur: {(BlurRenderSystem.BlurEnabled ? "ON" : "OFF")}");
+        var settings = world.GetResource<RenderSettings>();
+        settings.BloomEnabled = !settings.BloomEnabled;
+        Console.WriteLine($"[RenderDemo] Bloom: {(settings.BloomEnabled ? "ON" : "OFF")}");
     }
 
     // ── P 键截图 ─────────────────────────────────────────────────────────
@@ -636,6 +710,9 @@ public sealed class RenderDemoPlugin : IKiloPlugin
 {
     private readonly RenderSettings _settings;
     private readonly string? _modelPath;
+    private static RenderTexture? _minimapRT;
+
+    public static void SetMinimapRenderTexture(RenderTexture rt) => _minimapRT = rt;
 
     public RenderDemoPlugin(RenderSettings? settings = null, string? modelPath = null)
     {
@@ -654,6 +731,7 @@ public sealed class RenderDemoPlugin : IKiloPlugin
         });
         app.AddResource(new WindowSize { Width = _settings.Width, Height = _settings.Height });
         app.AddResource(new GpuSceneData());
+        app.AddResource(new ActiveCameraList());
         app.AddResource(new AnimationClipStore());
         // 输入
         app.AddResource(new InputState());
@@ -672,11 +750,9 @@ public sealed class RenderDemoPlugin : IKiloPlugin
         app.AddSystem(KiloStage.Last, new BeginFrameSystem().Update);
         app.AddSystem(KiloStage.Last, new ShadowMapSystem().Update);
         app.AddSystem(KiloStage.Last, new SkyboxRenderSystem().Update);
-        app.AddSystem(KiloStage.Last, new BlurRenderSystem().Update);
-        app.AddSystem(KiloStage.Last, new SpriteRenderSystem().Update);
-        app.AddSystem(KiloStage.Last, new TextRenderSystem().Update);
-        // PostProcessSystem handles SceneColor → Backbuffer (Bloom + ToneMapping + FXAA)
-        app.AddSystem(KiloStage.Last, new PostProcessSystem().Update);
+        app.AddSystem(KiloStage.Last, new ParticleUpdateSystem().Update);
+        app.AddSystem(KiloStage.Last, new CameraRenderLoopSystem().Update);
+        app.AddSystem(KiloStage.Last, MinimapBlitSystem);
         app.AddSystem(KiloStage.Last, new EndFrameSystem().Update);
         app.AddSystem(KiloStage.Last, new WindowResizeSystem().Update);
         // Reset per-frame input state AFTER all systems have read it
@@ -690,6 +766,61 @@ public sealed class RenderDemoPlugin : IKiloPlugin
         var deltaTime = (float)(now - _animLastTime).TotalSeconds;
         _animLastTime = now;
         new AnimationUpdateSystem().Update(world, deltaTime);
+    }
+
+    private static void MinimapBlitSystem(KiloWorld world)
+    {
+        var rt = _minimapRT;
+        if (rt == null) return;
+
+        var context = world.GetResource<RenderContext>();
+        var driver = context.Driver!;
+        var graph = context.RenderGraph;
+        var ws = world.GetResource<WindowSize>();
+        var pp = context.PostProcess;
+
+        if (!pp.Initialized) return;
+
+        rt.EnsureResources(driver);
+        graph.RegisterExternalTexture("MinimapColor", rt.Texture!);
+
+        int size = 200;
+        int margin = 15;
+        int x = ws.Width - size - margin;
+        int y = ws.Height - size - margin;
+
+        graph.AddPass("MinimapBlit", setup: pass =>
+        {
+            var minimapColor = pass.ImportTexture("MinimapColor", new TextureDescriptor
+            {
+                Width = rt.Width, Height = rt.Height,
+                Format = rt.Format,
+                Usage = TextureUsage.ShaderBinding,
+            });
+            pass.ReadTexture(minimapColor);
+
+            var backbuffer = pass.ImportTexture("Backbuffer", new TextureDescriptor
+            {
+                Width = ws.Width, Height = ws.Height,
+                Format = driver.SwapchainFormat,
+                Usage = TextureUsage.RenderAttachment,
+            });
+            pass.WriteTexture(backbuffer);
+            pass.ColorAttachment(backbuffer, DriverLoadAction.Load, DriverStoreAction.Store);
+        }, execute: exeCtx =>
+        {
+            var minimapView = exeCtx.GetTextureView("MinimapColor");
+            var bindingSet = driver.CreateBindingSetForPipeline(
+                pp.BlitPipeline!, 0,
+                textures: [new TextureBinding { Binding = 0, TextureView = minimapView }],
+                samplers: [new SamplerBinding { Binding = 1, Sampler = pp.LinearSampler! }]);
+
+            exeCtx.Encoder.SetViewport((uint)x, (uint)y, (uint)size, (uint)size);
+            exeCtx.Encoder.SetScissor(x, y, (uint)size, (uint)size);
+            exeCtx.Encoder.SetPipeline(pp.BlitPipeline!);
+            exeCtx.Encoder.SetBindingSet(0, bindingSet);
+            exeCtx.Encoder.Draw(3);
+        });
     }
 
     // ── GLTF 默认模型搜索 ──────────────────────────────────────────────────
@@ -1002,7 +1133,7 @@ public sealed class RenderDemoPlugin : IKiloPlugin
     // ── 截图保存为 PNG ────────────────────────────────────────────────────────
     private static void SaveScreenshot(int width, int height, uint alignedBytesPerRow, byte[] pixelData)
     {
-        var blurLabel = BlurRenderSystem.BlurEnabled ? "blur_on" : "blur_off";
+        var blurLabel = "pp";
         var timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
         var filename = $"screenshot_{blurLabel}_{timestamp}.png";
 
@@ -1026,249 +1157,7 @@ public sealed class RenderDemoPlugin : IKiloPlugin
         }
 
         image.SaveAsPng(filename);
-        Console.WriteLine($"[Screenshot] Saved: {filename} ({width}x{height}, blur={BlurRenderSystem.BlurEnabled})");
+        Console.WriteLine($"[Screenshot] Saved: {filename} ({width}x{height})");
     }
 }
 
-// =============================================================================
-// BlurRenderSystem
-// =============================================================================
-// 带 Blur 开关的渲染系统。3D 场景渲染到离屏纹理，可选计算模糊后 Blit 到 Backbuffer。
-// SpriteRenderSystem 随后在 Backbuffer 上绘制 2D 精灵。
-// =============================================================================
-public sealed class BlurRenderSystem
-{
-    private IComputePipeline? _blurHPipeline;
-    private IComputePipeline? _blurVPipeline;
-    private IRenderPipeline? _blitPipeline;
-    private ISampler? _blitSampler;
-
-    public static bool BlurEnabled { get; set; } = false;
-
-    public void Update(KiloWorld world)
-    {
-        var context = world.GetResource<RenderContext>();
-        var driver = context.Driver;
-        var scene = world.GetResource<GpuSceneData>();
-        var ws = world.GetResource<WindowSize>();
-        var graph = context.RenderGraph;
-
-        // ── 延迟创建管线（仅首次） ──────────────────────────────────────────
-        if (_blurHPipeline == null)
-        {
-            var hShader = context.ShaderCache.GetOrCreateComputeShader(driver, ComputeBlurShaders.BlurHorizontalWGSL, "main");
-            _blurHPipeline = driver.CreateComputePipeline(hShader, "main");
-            var vShader = context.ShaderCache.GetOrCreateComputeShader(driver, ComputeBlurShaders.BlurVerticalWGSL, "main");
-            _blurVPipeline = driver.CreateComputePipeline(vShader, "main");
-        }
-        if (_blitPipeline == null)
-        {
-            var blitVs = context.ShaderCache.GetOrCreateShader(driver, ComputeBlurShaders.FullscreenBlitWGSL, "vs_main");
-            var blitFs = context.ShaderCache.GetOrCreateShader(driver, ComputeBlurShaders.FullscreenBlitWGSL, "fs_main");
-
-            var swapchainFormat = driver.SwapchainFormat;
-            var blitKey = new PipelineCacheKey
-            {
-                VertexShaderSource = ComputeBlurShaders.FullscreenBlitWGSL,
-                VertexShaderEntryPoint = "vs_main",
-                FragmentShaderSource = ComputeBlurShaders.FullscreenBlitWGSL,
-                FragmentShaderEntryPoint = "fs_main",
-                Topology = DriverPrimitiveTopology.TriangleList,
-                SampleCount = 1,
-                VertexBuffers = [],
-                ColorTargets = [new ColorTargetDescriptor { Format = swapchainFormat }],
-                DepthStencil = null,
-            };
-            _blitPipeline = context.PipelineCache.GetOrCreate(driver, blitKey, () => driver.CreateRenderPipeline(new RenderPipelineDescriptor
-            {
-                VertexShader = blitVs,
-                FragmentShader = blitFs,
-                Topology = DriverPrimitiveTopology.TriangleList,
-                ColorTargets = blitKey.ColorTargets,
-                VertexBuffers = [],
-            }));
-        }
-        if (_blitSampler == null)
-        {
-            _blitSampler = driver.CreateSampler(new SamplerDescriptor
-            {
-                MinFilter = FilterMode.Linear,
-                MagFilter = FilterMode.Linear,
-            });
-        }
-
-        // ── 构建渲染通道 ───────────────────────────────────────────────────
-        RenderResourceHandle offscreenColor = default;
-        RenderResourceHandle offscreenDepth = default;
-        RenderResourceHandle blurredColor = default;
-        IBindingSet? blurBindings = null;
-        IBindingSet? blitBindings = null;
-
-        // Ensure SceneColor texture for post-processing pipeline
-        var pp = context.PostProcess;
-        if (pp.SceneColorTexture == null || pp.SceneColorWidth != ws.Width || pp.SceneColorHeight != ws.Height)
-        {
-            pp.SceneColorTexture?.Dispose();
-            pp.SceneColorTexture = driver.CreateTexture(new TextureDescriptor
-            {
-                Width = ws.Width,
-                Height = ws.Height,
-                Format = DriverPixelFormat.RGBA16Float,
-                Usage = TextureUsage.RenderAttachment | TextureUsage.ShaderBinding,
-            });
-            pp.SceneColorWidth = ws.Width;
-            pp.SceneColorHeight = ws.Height;
-        }
-        graph.RegisterExternalTexture("SceneColor", pp.SceneColorTexture);
-
-        // Pass 1: 3D 前向渲染 → SceneColor (HDR)
-        graph.AddPass("SceneForward", setup: pass =>
-        {
-            offscreenColor = pass.ImportTexture("SceneColor", new TextureDescriptor
-            {
-                Width = ws.Width,
-                Height = ws.Height,
-                Format = DriverPixelFormat.RGBA16Float,
-                Usage = TextureUsage.RenderAttachment | TextureUsage.ShaderBinding,
-            });
-            pass.WriteTexture(offscreenColor);
-            pass.ColorAttachment(offscreenColor, DriverLoadAction.Clear, DriverStoreAction.Store, clearColor: new Vector4(0.1f, 0.1f, 0.12f, 1f));
-
-            offscreenDepth = pass.CreateTexture(new TextureDescriptor
-            {
-                Width = ws.Width,
-                Height = ws.Height,
-                Format = DriverPixelFormat.Depth24Plus,
-                Usage = TextureUsage.RenderAttachment,
-            });
-            pass.WriteTexture(offscreenDepth);
-            pass.DepthStencilAttachment(offscreenDepth, DriverLoadAction.Clear, DriverStoreAction.Store, clearDepth: 1.0f);
-
-            var cameraBufferHandle = pass.ImportBuffer("CameraBuffer", new BufferDescriptor
-            {
-                Size = scene.CameraBuffer.Size,
-                Usage = BufferUsage.Uniform | BufferUsage.CopyDst,
-            });
-            var objectBufferHandle = pass.ImportBuffer("ObjectDataBuffer", new BufferDescriptor
-            {
-                Size = scene.ObjectDataBuffer.Size,
-                Usage = BufferUsage.Uniform | BufferUsage.CopyDst,
-            });
-            var lightBufferHandle = pass.ImportBuffer("LightBuffer", new BufferDescriptor
-            {
-                Size = scene.LightBuffer.Size,
-                Usage = BufferUsage.Uniform | BufferUsage.CopyDst,
-            });
-            pass.ReadBuffer(cameraBufferHandle);
-            pass.ReadBuffer(objectBufferHandle);
-            pass.ReadBuffer(lightBufferHandle);
-        }, execute: ctx =>
-        {
-            var encoder = ctx.Encoder;
-            encoder.SetViewport(0, 0, ws.Width, ws.Height);
-
-            // Skybox first
-            var skybox = context.Skybox;
-            if (skybox?.Pipeline != null)
-            {
-                var camData = new CameraData[1];
-                camData[0] = scene.PendingCamera;
-                skybox.CameraBuffer.UploadData<CameraData>(camData);
-
-                encoder.SetPipeline(skybox.Pipeline);
-                encoder.SetVertexBuffer(0, skybox.VertexBuffer);
-                encoder.SetIndexBuffer(skybox.IndexBuffer);
-                encoder.SetBindingSet(0, skybox.CameraBinding);
-                encoder.SetBindingSet(1, skybox.TextureBinding);
-                encoder.DrawIndexed(36);
-            }
-
-            // Opaque draws
-            for (int i = 0; i < scene.OpaqueCount; i++)
-                scene.EmitDraw(encoder, context, i);
-
-            // Transparent draws sorted back-to-front
-            for (int i = scene.OpaqueCount; i < scene.DrawCount; i++)
-                scene.EmitDraw(encoder, context, i);
-        });
-
-        // Pass 2 (可选): Separable Gaussian Blur (H + V)
-        if (BlurEnabled)
-        {
-            RenderResourceHandle tempColor = default;
-            IBindingSet? blurHBindings = null;
-            IBindingSet? blurVBindings = null;
-
-            // Pass 2a: Horizontal blur: offscreenColor → tempColor
-            graph.AddComputePass("BlurH", setup: pass =>
-            {
-                pass.ReadTexture(offscreenColor);
-                tempColor = pass.CreateTexture(new TextureDescriptor
-                {
-                    Width = ws.Width,
-                    Height = ws.Height,
-                    Format = DriverPixelFormat.RGBA8Unorm,
-                    Usage = TextureUsage.Storage | TextureUsage.ShaderBinding,
-                });
-                pass.WriteTexture(tempColor);
-            }, execute: ctx =>
-            {
-                var encoder = ctx.Encoder;
-                encoder.SetComputePipeline(_blurHPipeline!);
-
-                var srcView = ctx.GetTextureView(offscreenColor);
-                var dstView = ctx.GetTextureView(tempColor);
-
-                blurHBindings = driver.CreateBindingSetForComputePipeline(
-                    _blurHPipeline!, 0,
-                    [new TextureBinding { TextureView = srcView, Binding = 0 }],
-                    [new StorageTextureBinding { TextureView = dstView, Binding = 1, Format = DriverPixelFormat.RGBA8Unorm }]);
-
-                encoder.SetComputeBindingSet(0, blurHBindings);
-                uint groupsX = (uint)((ws.Width + 15) / 16);
-                uint groupsY = (uint)((ws.Height + 15) / 16);
-                encoder.Dispatch(groupsX, groupsY, 1);
-            });
-
-            // Pass 2b: Vertical blur: tempColor → blurredColor
-            graph.AddComputePass("BlurV", setup: pass =>
-            {
-                pass.ReadTexture(tempColor);
-                blurredColor = pass.CreateTexture(new TextureDescriptor
-                {
-                    Width = ws.Width,
-                    Height = ws.Height,
-                    Format = DriverPixelFormat.RGBA8Unorm,
-                    Usage = TextureUsage.Storage | TextureUsage.ShaderBinding | TextureUsage.CopySrc,
-                });
-                pass.WriteTexture(blurredColor);
-            }, execute: ctx =>
-            {
-                var encoder = ctx.Encoder;
-                encoder.SetComputePipeline(_blurVPipeline!);
-
-                var srcView = ctx.GetTextureView(tempColor);
-                var dstView = ctx.GetTextureView(blurredColor);
-
-                blurVBindings = driver.CreateBindingSetForComputePipeline(
-                    _blurVPipeline!, 0,
-                    [new TextureBinding { TextureView = srcView, Binding = 0 }],
-                    [new StorageTextureBinding { TextureView = dstView, Binding = 1, Format = DriverPixelFormat.RGBA8Unorm }]);
-
-                encoder.SetComputeBindingSet(0, blurVBindings);
-                uint groupsX = (uint)((ws.Width + 15) / 16);
-                uint groupsY = (uint)((ws.Height + 15) / 16);
-                encoder.Dispatch(groupsX, groupsY, 1);
-            });
-
-            blurBindings = blurHBindings; // for cleanup below
-        }
-
-        // PostProcessSystem handles SceneColor → Backbuffer now
-        // (Bloom + ToneMapping + FXAA)
-
-        // 清理每帧的临时 BindingSet
-        blurBindings?.Dispose();
-        blitBindings?.Dispose();
-    }
-}

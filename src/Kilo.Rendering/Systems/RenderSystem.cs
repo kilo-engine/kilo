@@ -9,59 +9,73 @@ namespace Kilo.Rendering;
 /// <summary>
 /// System that renders mesh entities through the RenderGraph.
 /// Draws skybox first (at far plane), then opaque objects, then transparent objects.
-/// Renders to SceneColor (HDR RGBA16Float) for post-processing.
 /// </summary>
 public sealed class RenderSystem
 {
+    /// <summary>
+    /// Backward-compatible entry point. Creates a default screen camera context.
+    /// </summary>
     public void Update(KiloWorld world)
+    {
+        var ws = world.GetResource<WindowSize>();
+        var scene = world.GetResource<GpuSceneData>();
+        var ctx = new CameraRenderContext(new ActiveCameraEntry
+        {
+            CameraData = scene.PendingCamera,
+            Target = CameraTarget.Screen,
+            ClearSettings = CameraClearSettings.Skybox,
+            CameraType = CameraType.Scene,
+            RenderWidth = ws.Width,
+            RenderHeight = ws.Height,
+            PostProcessEnabled = true,
+        });
+        AddForwardPass(ctx, world);
+    }
+
+    /// <summary>
+    /// Adds the forward rendering pass for a specific camera context.
+    /// Called by CameraRenderLoopSystem for each active camera.
+    /// </summary>
+    public void AddForwardPass(CameraRenderContext ctx, KiloWorld world)
     {
         var context = world.GetResource<RenderContext>();
         var driver = context.Driver;
         var scene = world.GetResource<GpuSceneData>();
-        var ws = world.GetResource<WindowSize>();
         var skybox = context.Skybox;
-
-        // Ensure SceneColor texture exists and matches window size
-        var pp = context.PostProcess;
-        if (pp.SceneColorTexture == null || pp.SceneColorWidth != ws.Width || pp.SceneColorHeight != ws.Height)
-        {
-            pp.SceneColorTexture?.Dispose();
-            pp.SceneColorTexture = driver.CreateTexture(new TextureDescriptor
-            {
-                Width = ws.Width,
-                Height = ws.Height,
-                Format = DriverPixelFormat.RGBA16Float,
-                Usage = TextureUsage.RenderAttachment | TextureUsage.ShaderBinding,
-            });
-            pp.SceneColorWidth = ws.Width;
-            pp.SceneColorHeight = ws.Height;
-        }
-
         var graph = context.RenderGraph;
-        graph.RegisterExternalTexture("SceneColor", pp.SceneColorTexture);
+        var pp = context.PostProcess;
 
-        graph.AddPass("Forward", setup: pass =>
+        // Ensure per-camera resources (SceneColor texture + camera buffer)
+        var camTex = pp.GetCameraTextures(ctx.Prefix);
+        camTex.EnsureSceneColor(driver, ctx.Width, ctx.Height);
+        camTex.EnsureCameraBuffer(driver);
+        graph.RegisterExternalTexture(ctx.SceneColorName, camTex.SceneColorTexture!);
+
+        graph.AddPass($"{ctx.Prefix}Forward", setup: pass =>
         {
             var depth = pass.CreateTexture(new TextureDescriptor
             {
-                Width = ws.Width,
-                Height = ws.Height,
+                Width = ctx.Width,
+                Height = ctx.Height,
                 Format = DriverPixelFormat.Depth24Plus,
                 Usage = TextureUsage.RenderAttachment,
             });
             pass.WriteTexture(depth);
             pass.DepthStencilAttachment(depth, DriverLoadAction.Clear, DriverStoreAction.Store, clearDepth: 1.0f);
 
-            var sceneColor = pass.ImportTexture("SceneColor", new TextureDescriptor
+            var sceneColor = pass.ImportTexture(ctx.SceneColorName, new TextureDescriptor
             {
-                Width = ws.Width,
-                Height = ws.Height,
+                Width = ctx.Width,
+                Height = ctx.Height,
                 Format = DriverPixelFormat.RGBA16Float,
                 Usage = TextureUsage.RenderAttachment | TextureUsage.ShaderBinding,
             });
             pass.WriteTexture(sceneColor);
-            pass.ColorAttachment(sceneColor, DriverLoadAction.Clear, DriverStoreAction.Store,
-                clearColor: new Vector4(0.1f, 0.1f, 0.12f, 1f));
+
+            var clearSettings = ctx.Camera.ClearSettings;
+            var loadAction = clearSettings.Mode == CameraClearMode.DontClear ? DriverLoadAction.Load : DriverLoadAction.Clear;
+            var clearColor = clearSettings.Mode == CameraClearMode.Color ? clearSettings.Color : new Vector4(0.1f, 0.1f, 0.12f, 1f);
+            pass.ColorAttachment(sceneColor, loadAction, DriverStoreAction.Store, clearColor: clearColor);
 
             var cameraBufferHandle = pass.ImportBuffer("CameraBuffer", new BufferDescriptor
             {
@@ -82,16 +96,24 @@ public sealed class RenderSystem
             pass.ReadBuffer(cameraBufferHandle);
             pass.ReadBuffer(objectBufferHandle);
             pass.ReadBuffer(lightBufferHandle);
-        }, execute: ctx =>
+        }, execute: exeCtx =>
         {
-            var encoder = ctx.Encoder;
-            encoder.SetViewport(0, 0, ws.Width, ws.Height);
+            var encoder = exeCtx.Encoder;
+            encoder.SetViewport(0, 0, (uint)ctx.Width, (uint)ctx.Height);
 
-            // 1) Skybox — depth LessEqual, depth write off, renders at far plane
-            if (skybox?.Pipeline != null)
+            // Upload camera data to per-camera buffer (not the shared scene.CameraBuffer)
+            // to avoid overwrite when multiple cameras use the same command encoder.
+            var camData = new CameraData[1];
+            camData[0] = ctx.Camera.CameraData;
+            camData[0].LightCount = scene.LightCount;
+            camTex.CameraBuffer!.UploadData<CameraData>(camData);
+
+            // Set the per-camera buffer override for EmitDraw
+            scene.CurrentCameraBuffer = camTex.CameraBuffer;
+
+            // 1) Skybox — only when clear mode is Skybox
+            if (skybox?.Pipeline != null && ctx.Camera.ClearSettings.Mode == CameraClearMode.Skybox)
             {
-                var camData = new CameraData[1];
-                camData[0] = scene.PendingCamera;
                 skybox.CameraBuffer.UploadData<CameraData>(camData);
 
                 encoder.SetPipeline(skybox.Pipeline);
@@ -102,17 +124,13 @@ public sealed class RenderSystem
                 encoder.DrawIndexed(36);
             }
 
-            // 2) Opaque draws — depth write enabled (pipeline controlled)
+            // 2) Opaque draws
             for (int i = 0; i < scene.OpaqueCount; i++)
-            {
                 scene.EmitDraw(encoder, context, i);
-            }
 
-            // 3) Transparent draws — depth write off, alpha blend, sorted back-to-front
+            // 3) Transparent draws
             for (int i = scene.OpaqueCount; i < scene.DrawCount; i++)
-            {
                 scene.EmitDraw(encoder, context, i);
-            }
         });
     }
 }

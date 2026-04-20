@@ -24,6 +24,7 @@ public sealed class RenderingPlugin : IKiloPlugin
         });
         app.AddResource(new WindowSize { Width = _settings.Width, Height = _settings.Height });
         app.AddResource(new GpuSceneData());
+        app.AddResource(new ActiveCameraList());
 
         app.AddSystem(KiloStage.PostUpdate, new LocalToWorldSystem().Update);
         app.AddSystem(KiloStage.First, new CameraSystem().Update);
@@ -35,10 +36,8 @@ public sealed class RenderingPlugin : IKiloPlugin
         app.AddSystem(KiloStage.Last, new BeginFrameSystem().Update);
         app.AddSystem(KiloStage.Last, new ShadowMapSystem().Update);
         app.AddSystem(KiloStage.Last, new SkyboxRenderSystem().Update);
-        app.AddSystem(KiloStage.Last, new RenderSystem().Update);
-        app.AddSystem(KiloStage.Last, new SpriteRenderSystem().Update);
-        app.AddSystem(KiloStage.Last, new TextRenderSystem().Update);
-        app.AddSystem(KiloStage.Last, new PostProcessSystem().Update);
+        app.AddSystem(KiloStage.Last, new ParticleUpdateSystem().Update);
+        app.AddSystem(KiloStage.Last, new CameraRenderLoopSystem().Update);
         app.AddSystem(KiloStage.Last, new EndFrameSystem().Update);
         app.AddSystem(KiloStage.Last, new WindowResizeSystem().Update);
     }
