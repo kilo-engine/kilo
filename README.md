@@ -72,6 +72,32 @@ struct Velocity { public float Dx, Dy; }
 | `KiloStage` | Execution stage (Startup, Update, etc.) |
 | `IKiloPlugin` | Plugin interface |
 
+## Input
+
+Kilo.Input provides hardware-agnostic action mapping. Game code queries "Jump" instead of `Key.Space`.
+
+```csharp
+// Register actions at startup
+var map = new InputMap("Player", 0);
+map.AddAxis2D("Move", (int)Key.W, (int)Key.S, (int)Key.A, (int)Key.D,
+    stick: GamepadThumbstick.LeftStick);
+map.AddAction("Jump", ActionType.Button,
+[
+    new() { SourceType = BindingSourceType.Keyboard, KeyCode = (int)Key.Space },
+    new() { SourceType = BindingSourceType.GamepadButton, GamepadButton = 0 },
+]);
+
+var stack = world.GetResource<InputMapStack>();
+stack.Register(map);
+stack.Enable("Player");
+
+// Query in update
+var move = input.GetVector2("Move");          // Vector2
+if (input.JustPressed("Jump")) Jump();        // edge detection
+```
+
+Full documentation: [Input Usage Guide](docs/input-usage.md)
+
 ## Anti-Corruption Layer
 
 All wrapper types use `[MethodImpl(AggressiveInlining)]` for zero-overhead forwarding. The JIT produces identical machine code to calling TinyEcs directly.
@@ -116,8 +142,8 @@ app.AddStage(physics).After(KiloStage.Update).Before(KiloStage.PostUpdate).Build
 
 ## Requirements
 
-- .NET 9.0 SDK (for building)
-- .NET 9.0 Runtime (for running)
+- .NET 10.0 SDK (for building)
+- .NET 10.0 Runtime (for running)
 
 ## Building
 
@@ -180,6 +206,8 @@ kilo/
 
 ### Module Roadmaps
 - [Rendering](docs/roadmap-rendering.md)
+- [Engine](docs/roadmap-engine.md)
+- [Input Usage](docs/input-usage.md)
 
 ### Future Directions
 - [ ] Full system parameter injection (T4-generated AddSystem overloads)

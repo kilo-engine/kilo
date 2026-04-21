@@ -18,6 +18,12 @@
 using System.Numerics;
 using Kilo.ECS;
 using Kilo.Window;
+using Kilo.Input;
+using Kilo.Input.Actions;
+using Kilo.Input.Bindings;
+using Kilo.Input.Contexts;
+using Kilo.Input.Modifiers;
+using Kilo.Input.Systems;
 using Kilo.Rendering;
 using Kilo.Rendering.Assets;
 using Kilo.Rendering.Driver;
@@ -465,7 +471,47 @@ app.AddSystem(KiloStage.Startup, world =>
     RenderDemoPlugin.SetMinimapRenderTexture(minimapRT);
 });
 
-// ── 每帧更新：相机控制 + 立方体旋转 + 精灵动画 + 输入日志 ──────────────────
+// ── 注册输入动作映射 ──────────────────────────────────────────────────────────
+app.AddSystem(KiloStage.Startup, world =>
+{
+    var stack = world.GetResource<InputMapStack>();
+    var map = new InputMap("Player", 0);
+    map
+        .AddAxis2D("Move", (int)Key.W, (int)Key.S, (int)Key.A, (int)Key.D,
+            stick: GamepadThumbstick.LeftStick)
+        .AddAction("MoveUp", ActionType.Axis1D,
+        [
+            new() { SourceType = BindingSourceType.Keyboard, KeyCode = (int)Key.E },
+        ])
+        .AddAction("MoveDown", ActionType.Axis1D,
+        [
+            new() { SourceType = BindingSourceType.Keyboard, KeyCode = (int)Key.Q },
+        ])
+        .AddAction("ToggleBlur", ActionType.Button,
+        [
+            new() { SourceType = BindingSourceType.Keyboard, KeyCode = (int)Key.B },
+        ])
+        .AddAction("Screenshot", ActionType.Button,
+        [
+            new() { SourceType = BindingSourceType.Keyboard, KeyCode = (int)Key.P },
+        ])
+        .AddAction("ToggleAnimPlay", ActionType.Button,
+        [
+            new() { SourceType = BindingSourceType.Keyboard, KeyCode = (int)Key.N },
+        ])
+        .AddAction("ToggleAnimLoop", ActionType.Button,
+        [
+            new() { SourceType = BindingSourceType.Keyboard, KeyCode = (int)Key.M },
+        ])
+        .AddAction("SwitchClip", ActionType.Button,
+        [
+            new() { SourceType = BindingSourceType.Keyboard, KeyCode = (int)Key.G },
+        ]);
+    stack.Register(map);
+    stack.Enable("Player");
+});
+
+// ── 每帧更新：动作映射 + 相机控制 + 立方体旋转 + 精灵动画 ──────────────────
 var _time = 0f;
 var _lastTime = DateTime.Now;
 app.AddSystem(KiloStage.Update, world =>
@@ -474,10 +520,16 @@ app.AddSystem(KiloStage.Update, world =>
     var deltaTime = (float)(now - _lastTime).TotalSeconds;
     _lastTime = now;
     _time += deltaTime;
-    var input = world.GetResource<InputState>();
+
+    // ── 动作映射管线：原始输入 → 动作状态 ────────────────────────────────────
+    var rawInput = world.GetResource<InputState>();
+    var stack = world.GetResource<InputMapStack>();
+    var mapSystem = world.GetResource<InputMapSystem>();
+    stack.BeginFrame();
+    mapSystem.Update(rawInput, stack, deltaTime);
 
     // ── B 键切换 Compute Blur ─────────────────────────────────────────────
-    if (input.IsKeyPressed((int)Key.B))
+    if (stack.JustPressed("ToggleBlur"))
     {
         var settings = world.GetResource<RenderSettings>();
         settings.BloomEnabled = !settings.BloomEnabled;
@@ -485,14 +537,14 @@ app.AddSystem(KiloStage.Update, world =>
     }
 
     // ── P 键截图 ─────────────────────────────────────────────────────────
-    if (input.IsKeyPressed((int)Key.P))
+    if (stack.JustPressed("Screenshot"))
     {
         world.GetResource<ScreenshotState>().Requested = true;
-        Console.WriteLine("[RenderDemo] Screenshot requested (P key)");
+        Console.WriteLine("[RenderDemo] Screenshot requested");
     }
 
     // ── N 键：动画播放/暂停 ───────────────────────────────────────────────
-    if (input.IsKeyPressed((int)Key.N))
+    if (stack.JustPressed("ToggleAnimPlay"))
     {
         var animQuery = world.QueryBuilder().With<AnimationPlayer>().Build();
         var animIter = animQuery.Iter();
@@ -508,7 +560,7 @@ app.AddSystem(KiloStage.Update, world =>
     }
 
     // ── M 键：动画循环切换 ─────────────────────────────────────────────────
-    if (input.IsKeyPressed((int)Key.M))
+    if (stack.JustPressed("ToggleAnimLoop"))
     {
         var animQuery = world.QueryBuilder().With<AnimationPlayer>().Build();
         var animIter = animQuery.Iter();
@@ -524,7 +576,7 @@ app.AddSystem(KiloStage.Update, world =>
     }
 
     // ── G 键：切换 GLTF 动画片段 ───────────────────────────────────────────
-    if (input.IsKeyPressed((int)Key.G))
+    if (stack.JustPressed("SwitchClip"))
     {
         var clipStore = world.GetResource<AnimationClipStore>();
         if (clipStore != null)
@@ -561,7 +613,6 @@ app.AddSystem(KiloStage.Update, world =>
         var playerEntities = playerIter.Entities();
         for (int i = 0; i < playerIter.Count; i++)
         {
-            // Skip entities that have GLTF clips (handled by AnimationUpdateSystem)
             if (animClipStore != null && animClipStore.EntityClips.ContainsKey((ulong)playerEntities[i].ID)) continue;
 
             var player = players[i];
@@ -572,7 +623,6 @@ app.AddSystem(KiloStage.Update, world =>
                 player.Time -= MathF.PI * 2;
             players[i] = player;
 
-            // Simple demo animation: rotate joint1 (lower arm) back and forth
             var skeleton = skeletons[i];
             if (skeleton.JointEntities.Length >= 2)
             {
@@ -592,16 +642,8 @@ app.AddSystem(KiloStage.Update, world =>
         }
     }
 
-    // ── 输入日志（按键/释放） ─────────────────────────────────────────────
-    for (int k = 0; k < 512; k++)
-    {
-        if (input.KeysPressed[k])
-            Console.WriteLine($"[Input] KeyDown: {(Key)k}");
-        if (input.KeysReleased[k])
-            Console.WriteLine($"[Input] KeyUp: {(Key)k}");
-    }
-
-    // ── WASD / 方向键 / QE 相机控制 ────────────────────────────────────────
+    // ── WASD + QE 相机控制（通过 Action Mapping）─────────────────────────
+    var move = stack.GetVector2("Move");
     var camQuery = world.QueryBuilder()
         .With<LocalTransform>()
         .With<Camera>()
@@ -614,14 +656,12 @@ app.AddSystem(KiloStage.Update, world =>
         for (int i = 0; i < camIter.Count; i++)
         {
             var pos = transforms[i].Position;
-            float speed = 0.15f;
+            float speed = 8f * deltaTime;
 
-            if (input.IsKeyDown((int)Key.W) || input.IsKeyDown((int)Key.Up)) pos.Z -= speed;
-            if (input.IsKeyDown((int)Key.S) || input.IsKeyDown((int)Key.Down)) pos.Z += speed;
-            if (input.IsKeyDown((int)Key.A) || input.IsKeyDown((int)Key.Left)) pos.X -= speed;
-            if (input.IsKeyDown((int)Key.D) || input.IsKeyDown((int)Key.Right)) pos.X += speed;
-            if (input.IsKeyDown((int)Key.Q)) pos.Y -= speed;
-            if (input.IsKeyDown((int)Key.E)) pos.Y += speed;
+            pos.X += move.X * speed;
+            pos.Z -= move.Y * speed;
+            if (stack.GetFloat("MoveUp") > 0f) pos.Y += speed;
+            if (stack.GetFloat("MoveDown") > 0f) pos.Y -= speed;
 
             transforms[i].Position = pos;
         }
@@ -724,9 +764,11 @@ public sealed class RenderDemoPlugin : IKiloPlugin
         app.AddResource(new SpriteRenderState());
         app.AddResource(new PostProcessState());
         app.AddResource(new ParticleSystemState());
-        // 输入
+        // 输入（原始状态 + 动作映射）
         app.AddResource(new InputState());
         app.AddResource(new InputSettings());
+        app.AddResource(new InputMapStack());
+        app.AddResource(new InputMapSystem());
 
         // 系统
         app.AddSystem(KiloStage.Update, AnimationUpdateWrapper);
@@ -1073,7 +1115,7 @@ public sealed class RenderDemoPlugin : IKiloPlugin
                     $"Skinned={gltfModel.IsSkinned}, Animations={gltfModel.Animations.Count}");
             }
 
-            Console.WriteLine("[Kilo] WebGPU initialized. WASD=Move, QE=Up/Down, B=Toggle Blur, P=Screenshot, N=Play/Pause, M=Toggle Loop, G=Switch Animation");
+            Console.WriteLine("[Kilo] WebGPU initialized. Action Mapping: WASD=Move, QE=Up/Down, B=Toggle Blur, P=Screenshot, N=Play/Pause, M=Toggle Loop, G=Switch Animation");
         };
 
         var _frameCount = 0;

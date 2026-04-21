@@ -3,7 +3,8 @@ using System.Numerics;
 namespace Kilo.Window;
 
 /// <summary>
-/// Current frame input state for keyboard and mouse.
+/// Current frame input state for keyboard, mouse, and gamepad.
+/// Frame-bounded: per-frame deltas (Pressed/Released/Delta/Scroll) are cleared each frame.
 /// </summary>
 public sealed class InputState
 {
@@ -24,11 +25,30 @@ public sealed class InputState
     /// <summary>Mouse movement delta since last frame (cleared on ResetFrame).</summary>
     public Vector2 MouseDelta;
 
-    /// <summary>Mouse buttons currently held down (5 buttons max).</summary>
-    public bool[] MouseButtonsDown { get; } = new bool[5];
+    /// <summary>Mouse buttons currently held down.</summary>
+    public bool[] MouseButtonsDown { get; } = new bool[8];
+
+    /// <summary>Mouse buttons pressed this frame (cleared on ResetFrame).</summary>
+    public bool[] MouseButtonsPressed { get; } = new bool[8];
+
+    /// <summary>Mouse buttons released this frame (cleared on ResetFrame).</summary>
+    public bool[] MouseButtonsReleased { get; } = new bool[8];
 
     /// <summary>Scroll wheel delta since last frame (cleared on ResetFrame).</summary>
     public float ScrollDelta;
+
+    // Gamepad state
+    /// <summary>Up to 4 connected gamepads.</summary>
+    public GamepadState[] Gamepads { get; } =
+    [
+        new(), new(), new(), new(),
+    ];
+
+    /// <summary>Number of connected gamepads.</summary>
+    public int ConnectedGamepadCount;
+
+    /// <summary>Whether the mouse cursor is locked to the window.</summary>
+    public bool IsMouseLocked;
 
     /// <summary>Check if a key is currently held down.</summary>
     public bool IsKeyDown(int key) => KeysDown[key];
@@ -43,15 +63,18 @@ public sealed class InputState
     public bool IsMouseButtonDown(int button) => MouseButtonsDown[button];
 
     /// <summary>
-    /// Reset frame-specific state. Copies KeysDown to previous state,
-    /// clears Pressed/Released arrays, and resets MouseDelta/ScrollDelta.
+    /// Reset frame-specific state. Clears Pressed/Released arrays and deltas.
+    /// Call at the end of each frame after all systems have read input.
     /// </summary>
     public void ResetFrame()
     {
-        // Clear per-frame state
         KeysPressed.AsSpan().Clear();
         KeysReleased.AsSpan().Clear();
+        MouseButtonsPressed.AsSpan().Clear();
+        MouseButtonsReleased.AsSpan().Clear();
         MouseDelta = Vector2.Zero;
         ScrollDelta = 0f;
+        for (int i = 0; i < ConnectedGamepadCount; i++)
+            Gamepads[i].ResetFrame();
     }
 }
