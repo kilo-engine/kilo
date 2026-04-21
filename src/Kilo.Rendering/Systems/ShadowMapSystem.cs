@@ -27,6 +27,7 @@ public sealed class ShadowMapSystem
         var context = world.GetResource<RenderContext>();
         var driver = context.Driver;
         var scene = world.GetResource<GpuSceneData>();
+        var store = world.GetResource<RenderResourceStore>();
         var ws = world.GetResource<WindowSize>();
 
         // Find the first directional light
@@ -156,9 +157,9 @@ public sealed class ShadowMapSystem
             for (int i = 0; i < scene.DrawCount; i++)
             {
                 var draw = scene.GetDraw(i);
-                if (draw.MeshHandle < 0 || draw.MeshHandle >= context.Meshes.Count) continue;
+                if (!draw.MeshHandle.IsValid || draw.MeshHandle.Value >= store.Meshes.Count) continue;
 
-                var mesh = context.Meshes[draw.MeshHandle];
+                var mesh = store.Meshes[draw.MeshHandle.Value];
                 encoder.SetVertexBuffer(0, mesh.VertexBuffer);
                 encoder.SetIndexBuffer(mesh.IndexBuffer);
                 encoder.SetBindingSet(1, _shadowObjectBinding!, (uint)(i * ObjectData.Size));
@@ -169,21 +170,11 @@ public sealed class ShadowMapSystem
 }
 
 /// <summary>
-/// GPU shadow uniform data matching WGSL ShadowData struct. Padded to 256 bytes.
+/// GPU shadow uniform data matching WGSL ShadowData struct. Padded to 256 bytes for WebGPU alignment.
 /// </summary>
-[System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+[System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential, Size = 256)]
 public struct ShadowUniformData
 {
     public Matrix4x4 LightVP;       // 64 bytes
     public int ShadowEnabled;       // 4 bytes
-    private int _pad0;
-    private int _pad1;
-    private int _pad2;
-    private System.Numerics.Vector4 _pad3;
-    private System.Numerics.Vector4 _pad4;
-    private System.Numerics.Vector4 _pad5;
-    private System.Numerics.Vector4 _pad6;
-    private System.Numerics.Vector4 _pad7;
-    private System.Numerics.Vector4 _pad8;
-    private System.Numerics.Vector4 _pad9;
 }

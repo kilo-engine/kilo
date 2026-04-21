@@ -31,7 +31,7 @@ public sealed class ParticleRenderSystem
     {
         var context = world.GetResource<RenderContext>();
         var driver = context.Driver;
-        var ps = context.Particles;
+        var ps = world.GetResource<ParticleSystemState>();
         var scene = world.GetResource<GpuSceneData>();
 
         if (!ps.Initialized || ps.RenderPipeline == null) return;
@@ -63,7 +63,7 @@ public sealed class ParticleRenderSystem
         var cameraData = ctx.Camera.CameraData;
 
         // Get per-camera buffer to avoid shared-buffer overwrite
-        var pp = context.PostProcess;
+        var pp = world.GetResource<PostProcessState>();
         var camTex = pp.GetCameraTextures(ctx.Prefix);
         camTex.EnsureCameraBuffer(driver);
 
@@ -111,10 +111,9 @@ public sealed class ParticleRenderSystem
     /// Initializes the render pipeline if not already done.
     /// Called by CameraRenderLoopSystem before first render.
     /// </summary>
-    public static void EnsureRenderPipeline(RenderContext context)
+    public static void EnsureRenderPipeline(RenderContext context, ParticleSystemState ps)
     {
         var driver = context.Driver;
-        var ps = context.Particles;
         if (ps.RenderPipeline != null) return;
 
         var vs = context.ShaderCache.GetOrCreateShader(driver, ParticleShaders.RenderWGSL, "vs_main");

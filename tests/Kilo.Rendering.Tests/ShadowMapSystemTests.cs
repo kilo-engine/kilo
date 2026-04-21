@@ -21,6 +21,7 @@ public class ShadowMapSystemTests
         world.AddResource(context);
         world.AddResource(new WindowSize { Width = 800, Height = 600 });
         world.AddResource(new GpuSceneData());
+        world.AddResource(new RenderResourceStore());
 
         var system = new ShadowMapSystem();
         var ex = Record.Exception(() => system.Update(world));
@@ -41,6 +42,7 @@ public class ShadowMapSystemTests
 
         world.AddResource(context);
         world.AddResource(new WindowSize { Width = 800, Height = 600 });
+        world.AddResource(new RenderResourceStore());
         var scene = new GpuSceneData
         {
             CameraBuffer = cameraBuffer,
@@ -86,6 +88,7 @@ public class ShadowMapSystemTests
 
         world.AddResource(context);
         world.AddResource(new WindowSize { Width = 800, Height = 600 });
+        world.AddResource(new RenderResourceStore());
         world.AddResource(scene);
         scene.ShadowDataBuffer = driver.CreateBuffer(new RenderGraph.BufferDescriptor { Size = 256, Usage = RenderGraph.BufferUsage.Uniform });
 
@@ -109,6 +112,6 @@ public class ShadowMapSystemTests
     public void ShadowUniformData_HasCorrectSize()
     {
         // ShadowUniformData should be padded to 256 bytes for WebGPU alignment
-        Assert.Equal(192, System.Runtime.InteropServices.Marshal.SizeOf<ShadowUniformData>());
+        Assert.Equal(256, System.Runtime.InteropServices.Marshal.SizeOf<ShadowUniformData>());
     }
 }

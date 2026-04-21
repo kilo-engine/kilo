@@ -16,7 +16,7 @@ public sealed class ObjectPrepareSystem
     public void Update(KiloWorld world)
     {
         var scene = world.GetResource<GpuSceneData>();
-        var context = world.GetResource<RenderContext>();
+        var store = world.GetResource<RenderResourceStore>();
 
         int maxObjects = (int)(scene.ObjectDataBuffer.Size / (nuint)ObjectData.Size);
         var collector = new DrawCollector(maxObjects);
@@ -40,7 +40,7 @@ public sealed class ObjectPrepareSystem
                 if (collector.IsFull) break;
                 collector.Add(renderers[i].MaterialHandle, renderers[i].MeshHandle,
                     isSkinned: false, jointBindingSet: null,
-                    transforms[i].Value, context);
+                    transforms[i].Value, store);
             }
         }
 
@@ -62,7 +62,7 @@ public sealed class ObjectPrepareSystem
                 if (collector.IsFull) break;
                 collector.Add(renderers[i].MaterialHandle, renderers[i].MeshHandle,
                     isSkinned: true, jointBindingSet: renderers[i].JointBindingSet,
-                    transforms[i].Value, context);
+                    transforms[i].Value, store);
             }
         }
 
@@ -70,7 +70,7 @@ public sealed class ObjectPrepareSystem
         collector.SortTransparent(scene.PendingCamera.Position);
 
         // Build GPU data
-        var (draws, objectData, totalCount, opaqueCount) = collector.Build(context);
+        var (draws, objectData, totalCount, opaqueCount) = collector.Build(store);
         scene.SetDrawData(draws, totalCount, opaqueCount);
         if (totalCount > 0)
         {
@@ -91,16 +91,16 @@ public sealed class ObjectPrepareSystem
 
         public DrawCollector(int capacity) => _capacity = capacity;
 
-        public void Add(int materialHandle, int meshHandle, bool isSkinned,
-            IBindingSet? jointBindingSet, Matrix4x4 world, RenderContext context)
+        public void Add(MaterialHandle materialHandle, MeshHandle meshHandle, bool isSkinned,
+            IBindingSet? jointBindingSet, Matrix4x4 world, RenderResourceStore store)
         {
-            bool isTransparent = materialHandle >= 0 && materialHandle < context.Materials.Count
-                && context.Materials[materialHandle].IsTransparent;
+            bool isTransparent = materialHandle.IsValid && materialHandle.Value < store.Materials.Count
+                && store.Materials[materialHandle.Value].IsTransparent;
 
             var draw = new DrawData
             {
                 MeshHandle = meshHandle,
-                MaterialId = materialHandle,
+                MaterialHandle = materialHandle,
                 IsSkinned = isSkinned,
                 IsTransparent = isTransparent,
                 JointBindingSet = jointBindingSet,
@@ -119,14 +119,14 @@ public sealed class ObjectPrepareSystem
             {
                 int cmp = Vector3.DistanceSquared(b.World.Translation, cameraPosition)
                     .CompareTo(Vector3.DistanceSquared(a.World.Translation, cameraPosition));
-                return cmp != 0 ? cmp : a.Draw.MaterialId.CompareTo(b.Draw.MaterialId);
+                return cmp != 0 ? cmp : a.Draw.MaterialHandle.Value.CompareTo(b.Draw.MaterialHandle.Value);
             });
         }
 
         /// <summary>
         /// Combines opaque then sorted transparent draws, and populates ObjectData arrays.
         /// </summary>
-        public (DrawData[] Draws, ObjectData[] ObjectData, int Count, int OpaqueCount) Build(RenderContext context)
+        public (DrawData[] Draws, ObjectData[] ObjectData, int Count, int OpaqueCount) Build(RenderResourceStore store)
         {
             int opaqueCount = _opaque.Count;
             int total = Math.Min(opaqueCount + _transparent.Count, _capacity);
@@ -138,14 +138,14 @@ public sealed class ObjectPrepareSystem
             foreach (var (draw, world) in _opaque)
             {
                 if (idx >= total) break;
-                PopulateObject(ref objectData[idx], world, draw.MaterialId, context);
+                PopulateObject(ref objectData[idx], world, draw.MaterialHandle, store);
                 draws[idx++] = draw;
             }
 
             foreach (var (draw, world) in _transparent)
             {
                 if (idx >= total) break;
-                PopulateObject(ref objectData[idx], world, draw.MaterialId, context);
+                PopulateObject(ref objectData[idx], world, draw.MaterialHandle, store);
                 draws[idx++] = draw;
             }
 
@@ -153,14 +153,14 @@ public sealed class ObjectPrepareSystem
         }
 
         private static void PopulateObject(ref ObjectData data, Matrix4x4 world,
-            int materialHandle, RenderContext context)
+            MaterialHandle materialHandle, RenderResourceStore store)
         {
             data.Model = world;
-            data.MaterialId = materialHandle;
+            data.MaterialId = materialHandle.Value;
 
-            if (materialHandle >= 0 && materialHandle < context.Materials.Count)
+            if (materialHandle.IsValid && materialHandle.Value < store.Materials.Count)
             {
-                var material = context.Materials[materialHandle];
+                var material = store.Materials[materialHandle.Value];
                 data.BaseColor = material.BaseColor;
                 data.UseTexture = material.UseTexture ? 1 : 0;
                 data.Metallic = material.Metallic;

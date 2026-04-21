@@ -49,6 +49,7 @@ public class PrepareGpuSceneSystemTests
             ObjectDataBuffer = objectBuffer,
             LightBuffer = lightBuffer,
         });
+        world.AddResource(new RenderResourceStore());
 
         var entity = world.Entity();
         entity.Set(new Camera
@@ -95,6 +96,7 @@ public class PrepareGpuSceneSystemTests
             ObjectDataBuffer = objectBuffer,
             LightBuffer = lightBuffer,
         });
+        world.AddResource(new RenderResourceStore());
 
         world.Entity().Set(new DirectionalLight
         {
@@ -146,16 +148,17 @@ public class PrepareGpuSceneSystemTests
             ObjectDataBuffer = objectBuffer,
             LightBuffer = lightBuffer,
         });
+        world.AddResource(new RenderResourceStore());
 
         var e1 = world.Entity();
         e1.Set(new LocalTransform { Position = Vector3.Zero, Rotation = Quaternion.Identity, Scale = Vector3.One });
         e1.Set(new LocalToWorld { Value = Matrix4x4.CreateTranslation(1, 2, 3) });
-        e1.Set(new MeshRenderer { MeshHandle = 0, MaterialHandle = 1 });
+        e1.Set(new MeshRenderer { MeshHandle = new MeshHandle(0), MaterialHandle = new MaterialHandle(1) });
 
         var e2 = world.Entity();
         e2.Set(new LocalTransform { Position = Vector3.Zero, Rotation = Quaternion.Identity, Scale = Vector3.One });
         e2.Set(new LocalToWorld { Value = Matrix4x4.CreateTranslation(4, 5, 6) });
-        e2.Set(new MeshRenderer { MeshHandle = 0, MaterialHandle = 2 });
+        e2.Set(new MeshRenderer { MeshHandle = new MeshHandle(0), MaterialHandle = new MaterialHandle(2) });
 
         new CameraPrepareSystem().Update(world);
         new ObjectPrepareSystem().Update(world);
@@ -163,8 +166,8 @@ public class PrepareGpuSceneSystemTests
 
         var scene = world.GetResource<GpuSceneData>();
         Assert.Equal(2, scene.DrawCount);
-        Assert.Equal(1, scene.GetDraw(0).MaterialId);
-        Assert.Equal(2, scene.GetDraw(1).MaterialId);
+        Assert.Equal(new MaterialHandle(1), scene.GetDraw(0).MaterialHandle);
+        Assert.Equal(new MaterialHandle(2), scene.GetDraw(1).MaterialHandle);
 
         Assert.Equal(256 * 2, objectBuffer.LastUpload.Length);
         var obj0 = MemoryMarshal.Read<ObjectData>(objectBuffer.LastUpload.AsSpan());

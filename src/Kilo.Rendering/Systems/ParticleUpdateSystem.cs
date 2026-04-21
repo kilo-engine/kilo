@@ -47,7 +47,7 @@ public sealed class ParticleUpdateSystem
     {
         var context = world.GetResource<RenderContext>();
         var driver = context.Driver;
-        var ps = context.Particles;
+        var ps = world.GetResource<ParticleSystemState>();
 
         if (driver == null) return;
 

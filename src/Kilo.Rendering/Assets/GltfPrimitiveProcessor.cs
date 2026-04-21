@@ -16,10 +16,11 @@ internal static class GltfPrimitiveProcessor
     private const int StaticFloatsPerVertex = 12;
     private const int StaticBytesPerVertex = 48;
 
-    public static (int meshHandle, int materialHandle) LoadPrimitive(
+    public static (MeshHandle meshHandle, MaterialHandle materialHandle) LoadPrimitive(
         SharpGLTF.Schema2.MeshPrimitive primitive,
         IRenderDriver driver,
         RenderContext context,
+        RenderResourceStore store,
         GpuSceneData scene,
         GltfModel result)
     {
@@ -210,7 +211,7 @@ internal static class GltfPrimitiveProcessor
             }]
         };
 
-        int meshHandle = context.AddMesh(mesh);
+        MeshHandle meshHandle = store.AddMesh(mesh);
 
         // Create material from GLTF material with PBR properties
         var matDescriptor = new MaterialDescriptor { BaseColor = Vector4.One };
@@ -258,7 +259,7 @@ internal static class GltfPrimitiveProcessor
             };
         }
 
-        int materialHandle = context.MaterialManager.CreateMaterial(context, scene, matDescriptor);
+        MaterialHandle materialHandle = context.MaterialManager.CreateMaterial(context, store, scene, matDescriptor);
 
         return (meshHandle, materialHandle);
     }

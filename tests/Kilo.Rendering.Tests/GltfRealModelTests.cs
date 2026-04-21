@@ -20,10 +20,11 @@ public class GltfRealModelTests
     private static readonly string ModelsRoot = Path.GetFullPath(
         Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "docs-3rd", "bevy-main", "assets", "models"));
 
-    private static RenderContext SetupContext(MockRenderDriver driver)
+    private static (RenderContext context, RenderResourceStore store) SetupContext(MockRenderDriver driver)
     {
         var context = new RenderContext { Driver = driver, ShaderCache = new ShaderCache(), PipelineCache = new PipelineCache() };
-        context.AddMesh(new Mesh
+        var store = new RenderResourceStore();
+        store.AddMesh(new Mesh
         {
             VertexBuffer = driver.CreateBuffer(new BufferDescriptor { Size = 256, Usage = BufferUsage.Vertex }),
             IndexBuffer = driver.CreateBuffer(new BufferDescriptor { Size = 64, Usage = BufferUsage.Index }),
@@ -42,20 +43,20 @@ public class GltfRealModelTests
                 }
             ]
         });
-        return context;
+        return (context, store);
     }
 
-    private static (RenderContext context, GpuSceneData scene) CreateTestEnv()
+    private static (RenderContext context, RenderResourceStore store, GpuSceneData scene) CreateTestEnv()
     {
         var driver = new MockRenderDriver();
-        var context = SetupContext(driver);
+        var (context, store) = SetupContext(driver);
         var scene = new GpuSceneData
         {
             CameraBuffer = driver.CreateBuffer(new BufferDescriptor { Size = 256, Usage = BufferUsage.Uniform }),
             ObjectDataBuffer = driver.CreateBuffer(new BufferDescriptor { Size = 4096, Usage = BufferUsage.Uniform }),
             LightBuffer = driver.CreateBuffer(new BufferDescriptor { Size = 1024, Usage = BufferUsage.Uniform }),
         };
-        return (context, scene);
+        return (context, store, scene);
     }
 
     private static string Resolve(string relativePath)
@@ -66,13 +67,13 @@ public class GltfRealModelTests
         return path;
     }
 
-    // ── Simple mesh (no texture, no animation) ──────────────────────
+    // -- Simple mesh (no texture, no animation) -------------------------
 
     [Fact]
     public void CornellBox_Glb_LoadsSuccessfully()
     {
-        var (context, scene) = CreateTestEnv();
-        var result = GltfLoader.Load(Resolve("CornellBox/CornellBox.glb"), context.Driver, context, scene);
+        var (context, store, scene) = CreateTestEnv();
+        var result = GltfLoader.Load(Resolve("CornellBox/CornellBox.glb"), context.Driver, context, store, scene);
 
         Assert.True(result.Primitives.Count > 0, "Should have at least one primitive");
         Assert.False(result.IsSkinned, "CornellBox is not skinned");
@@ -80,41 +81,41 @@ public class GltfRealModelTests
 
         foreach (var (meshHandle, matHandle) in result.Primitives)
         {
-            Assert.True(meshHandle > 0, "Mesh handle should be > 0 (index 0 is default cube)");
-            Assert.InRange(matHandle, 0, context.Materials.Count - 1);
+            Assert.True(meshHandle.Value > 0, "Mesh handle should be > 0 (index 0 is default cube)");
+            Assert.InRange(matHandle.Value, 0, store.Materials.Count - 1);
         }
     }
 
-    // ── Simple gltf with external data ──────────────────────────────
+    // -- Simple gltf with external data ---------------------------------
 
     [Fact]
     public void Cube_Gltf_LoadsSuccessfully()
     {
-        var (context, scene) = CreateTestEnv();
-        var result = GltfLoader.Load(Resolve("cube/cube.gltf"), context.Driver, context, scene);
+        var (context, store, scene) = CreateTestEnv();
+        var result = GltfLoader.Load(Resolve("cube/cube.gltf"), context.Driver, context, store, scene);
 
         Assert.True(result.Primitives.Count > 0);
         Assert.False(result.IsSkinned);
     }
 
-    // ── Multi-mesh model ────────────────────────────────────────────
+    // -- Multi-mesh model -----------------------------------------------
 
     [Fact]
     public void Cubes_Glb_MultiplePrimitives()
     {
-        var (context, scene) = CreateTestEnv();
-        var result = GltfLoader.Load(Resolve("cubes/Cubes.glb"), context.Driver, context, scene);
+        var (context, store, scene) = CreateTestEnv();
+        var result = GltfLoader.Load(Resolve("cubes/Cubes.glb"), context.Driver, context, store, scene);
 
         Assert.True(result.Primitives.Count >= 1, "Cubes should have primitives");
     }
 
-    // ── Textured model (multi-material with textures) ───────────────
+    // -- Textured model (multi-material with textures) ------------------
 
     [Fact]
     public void FlightHelmet_Gltf_LoadsWithTextures()
     {
-        var (context, scene) = CreateTestEnv();
-        var result = GltfLoader.Load(Resolve("FlightHelmet/FlightHelmet.gltf"), context.Driver, context, scene);
+        var (context, store, scene) = CreateTestEnv();
+        var result = GltfLoader.Load(Resolve("FlightHelmet/FlightHelmet.gltf"), context.Driver, context, store, scene);
 
         Assert.True(result.Primitives.Count >= 4, $"FlightHelmet should have >= 4 primitives (got {result.Primitives.Count})");
 
@@ -122,19 +123,19 @@ public class GltfRealModelTests
         int texturedCount = 0;
         foreach (var (_, matHandle) in result.Primitives)
         {
-            var mat = context.Materials[matHandle];
+            var mat = store.Materials[matHandle.Value];
             if (mat.UseTexture) texturedCount++;
         }
         Assert.True(texturedCount > 0, $"At least one material should have textures (textured: {texturedCount})");
     }
 
-    // ── Animated/skinned model ──────────────────────────────────────
+    // -- Animated/skinned model -----------------------------------------
 
     [Fact]
     public void Fox_Glb_LoadsWithSkeletonAndAnimations()
     {
-        var (context, scene) = CreateTestEnv();
-        var result = GltfLoader.Load(Resolve("animated/Fox.glb"), context.Driver, context, scene);
+        var (context, store, scene) = CreateTestEnv();
+        var result = GltfLoader.Load(Resolve("animated/Fox.glb"), context.Driver, context, store, scene);
 
         Assert.True(result.Primitives.Count > 0, "Fox should have primitives");
         Assert.True(result.IsSkinned, "Fox should be detected as skinned");
@@ -157,33 +158,33 @@ public class GltfRealModelTests
         }
     }
 
-    // ── Model with base color textures ──────────────────────────────
+    // -- Model with base color textures ---------------------------------
 
     [Fact]
     public void GolfBall_Glb_LoadsWithMaterial()
     {
-        var (context, scene) = CreateTestEnv();
-        var result = GltfLoader.Load(Resolve("GolfBall/GolfBall.glb"), context.Driver, context, scene);
+        var (context, store, scene) = CreateTestEnv();
+        var result = GltfLoader.Load(Resolve("GolfBall/GolfBall.glb"), context.Driver, context, store, scene);
 
         Assert.True(result.Primitives.Count > 0);
         foreach (var (meshHandle, matHandle) in result.Primitives)
         {
-            Assert.InRange(meshHandle, 1, context.Meshes.Count - 1);
-            Assert.InRange(matHandle, 0, context.Materials.Count - 1);
+            Assert.InRange(meshHandle.Value, 1, store.Meshes.Count - 1);
+            Assert.InRange(matHandle.Value, 0, store.Materials.Count - 1);
         }
     }
 
-    // ── Vertex data integrity ───────────────────────────────────────
+    // -- Vertex data integrity ------------------------------------------
 
     [Fact]
     public void CornellBox_VertexBuffersHaveData()
     {
-        var (context, scene) = CreateTestEnv();
-        var result = GltfLoader.Load(Resolve("CornellBox/CornellBox.glb"), context.Driver, context, scene);
+        var (context, store, scene) = CreateTestEnv();
+        var result = GltfLoader.Load(Resolve("CornellBox/CornellBox.glb"), context.Driver, context, store, scene);
 
         foreach (var (meshHandle, _) in result.Primitives)
         {
-            var mesh = context.Meshes[meshHandle];
+            var mesh = store.Meshes[meshHandle.Value];
             Assert.NotNull(mesh.VertexBuffer);
             Assert.NotNull(mesh.IndexBuffer);
             Assert.True(mesh.IndexCount > 0, "Should have indices");
@@ -192,19 +193,19 @@ public class GltfRealModelTests
         }
     }
 
-    // ── Skinned mesh vertex format ──────────────────────────────────
+    // -- Skinned mesh vertex format -------------------------------------
 
     [Fact]
     public void Fox_SkinnedMeshHasCorrectVertexLayout()
     {
-        var (context, scene) = CreateTestEnv();
-        var result = GltfLoader.Load(Resolve("animated/Fox.glb"), context.Driver, context, scene);
+        var (context, store, scene) = CreateTestEnv();
+        var result = GltfLoader.Load(Resolve("animated/Fox.glb"), context.Driver, context, store, scene);
 
         // At least one primitive should have skinned vertex layout
         bool foundSkinnedLayout = false;
         foreach (var (meshHandle, _) in result.Primitives)
         {
-            var mesh = context.Meshes[meshHandle];
+            var mesh = store.Meshes[meshHandle.Value];
             var layout = mesh.Layouts[0];
             if (layout.ArrayStride == SkinnedMesh.BytesPerVertex)
             {
@@ -216,13 +217,13 @@ public class GltfRealModelTests
         Assert.True(foundSkinnedLayout, "Fox should have at least one primitive with skinned vertex layout");
     }
 
-    // ── Skeleton hierarchy ──────────────────────────────────────────
+    // -- Skeleton hierarchy ---------------------------------------------
 
     [Fact]
     public void Fox_SkeletonHasValidHierarchy()
     {
-        var (context, scene) = CreateTestEnv();
-        var result = GltfLoader.Load(Resolve("animated/Fox.glb"), context.Driver, context, scene);
+        var (context, store, scene) = CreateTestEnv();
+        var result = GltfLoader.Load(Resolve("animated/Fox.glb"), context.Driver, context, store, scene);
 
         Assert.NotNull(result.Skeleton);
         var joints = result.Skeleton.Joints;
@@ -242,13 +243,13 @@ public class GltfRealModelTests
         }
     }
 
-    // ── Invalid path ────────────────────────────────────────────────
+    // -- Invalid path ---------------------------------------------------
 
     [Fact]
     public void InvalidPath_ThrowsException()
     {
-        var (context, scene) = CreateTestEnv();
+        var (context, store, scene) = CreateTestEnv();
         Assert.ThrowsAny<Exception>(() =>
-            GltfLoader.Load("does_not_exist.glb", context.Driver, context, scene));
+            GltfLoader.Load("does_not_exist.glb", context.Driver, context, store, scene));
     }
 }

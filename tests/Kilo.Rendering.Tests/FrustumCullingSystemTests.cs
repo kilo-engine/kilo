@@ -12,21 +12,22 @@ namespace Kilo.Rendering.Tests;
 
 public class FrustumCullingSystemTests
 {
-    /// <summary>Helper: creates a RenderContext with a default unit-cube mesh at index 0.</summary>
-    private static RenderContext CreateContextWithDefaultMesh()
+    /// <summary>Helper: creates a world with a RenderContext that has a default unit-cube mesh in the store.</summary>
+    private static (RenderContext context, RenderResourceStore store) CreateContextWithDefaultMesh()
     {
         var driver = new MockRenderDriver();
         var context = new RenderContext { Driver = driver };
+        var store = new RenderResourceStore();
         var vb = driver.CreateBuffer(new RenderGraph.BufferDescriptor { Size = 128, Usage = RenderGraph.BufferUsage.Vertex });
         var ib = driver.CreateBuffer(new RenderGraph.BufferDescriptor { Size = 64, Usage = RenderGraph.BufferUsage.Index });
-        context.AddMesh(new Mesh
+        store.AddMesh(new Mesh
         {
             VertexBuffer = vb,
             IndexBuffer = ib,
             IndexCount = 36,
             Bounds = (new Vector3(-0.5f, -0.5f, -0.5f), new Vector3(0.5f, 0.5f, 0.5f)),
         });
-        return context;
+        return (context, store);
     }
 
     [Fact]
@@ -35,6 +36,7 @@ public class FrustumCullingSystemTests
         var world = new KiloWorld();
         var driver = new MockRenderDriver();
         world.AddResource(new RenderContext { Driver = driver });
+        world.AddResource(new RenderResourceStore());
         world.AddResource(new WindowSize { Width = 800, Height = 600 });
 
         var system = new FrustumCullingSystem();
@@ -46,8 +48,9 @@ public class FrustumCullingSystemTests
     public void FrustumCulling_VisibleEntity_NotCulled()
     {
         var world = new KiloWorld();
-        var context = CreateContextWithDefaultMesh();
+        var (context, store) = CreateContextWithDefaultMesh();
         world.AddResource(context);
+        world.AddResource(store);
         world.AddResource(new WindowSize { Width = 800, Height = 600 });
 
         // Camera at (0,0,10) looking forward
@@ -65,7 +68,7 @@ public class FrustumCullingSystemTests
 
         // Visible mesh at origin
         var entity = world.Entity("VisibleMesh")
-            .Set(new MeshRenderer { MeshHandle = 0, MaterialHandle = 0 })
+            .Set(new MeshRenderer { MeshHandle = new MeshHandle(0), MaterialHandle = new MaterialHandle(0) })
             .Set(new LocalToWorld { Value = Matrix4x4.Identity });
 
         var system = new FrustumCullingSystem();
@@ -79,8 +82,9 @@ public class FrustumCullingSystemTests
     public void FrustumCulling_BehindCamera_GetsCulled()
     {
         var world = new KiloWorld();
-        var context = CreateContextWithDefaultMesh();
+        var (context, store) = CreateContextWithDefaultMesh();
         world.AddResource(context);
+        world.AddResource(store);
         world.AddResource(new WindowSize { Width = 800, Height = 600 });
 
         world.Entity("Camera")
@@ -97,7 +101,7 @@ public class FrustumCullingSystemTests
 
         // Mesh far behind camera
         var entity = world.Entity("HiddenMesh")
-            .Set(new MeshRenderer { MeshHandle = 0, MaterialHandle = 0 })
+            .Set(new MeshRenderer { MeshHandle = new MeshHandle(0), MaterialHandle = new MaterialHandle(0) })
             .Set(new LocalToWorld { Value = Matrix4x4.CreateTranslation(0, 0, -100) });
 
         var system = new FrustumCullingSystem();
@@ -111,8 +115,9 @@ public class FrustumCullingSystemTests
     public void FrustumCulling_InvalidMeshHandle_GetsCulled()
     {
         var world = new KiloWorld();
-        var context = CreateContextWithDefaultMesh();
+        var (context, store) = CreateContextWithDefaultMesh();
         world.AddResource(context);
+        world.AddResource(store);
         world.AddResource(new WindowSize { Width = 800, Height = 600 });
 
         world.Entity("Camera")
@@ -128,7 +133,7 @@ public class FrustumCullingSystemTests
             });
 
         var entity = world.Entity("InvalidMesh")
-            .Set(new MeshRenderer { MeshHandle = -1, MaterialHandle = 0 })
+            .Set(new MeshRenderer { MeshHandle = MeshHandle.Invalid, MaterialHandle = new MaterialHandle(0) })
             .Set(new LocalToWorld { Value = Matrix4x4.Identity });
 
         var system = new FrustumCullingSystem();

@@ -38,14 +38,14 @@ public sealed class MaterialManager
 
     /// <summary>
     /// Creates a new material from the given descriptor.
-    /// The material is added to the context's Materials list and its handle is returned.
+    /// The material is added to the resource store and its handle is returned.
     /// </summary>
-    public int CreateMaterial(RenderContext context, GpuSceneData scene, MaterialDescriptor descriptor)
+    public MaterialHandle CreateMaterial(RenderContext context, RenderResourceStore store, GpuSceneData scene, MaterialDescriptor descriptor)
     {
         var driver = context.Driver;
 
         bool isTransparent = descriptor.ResolveTransparency();
-        var pipeline = GetOrCreatePipeline(context, driver, isTransparent);
+        var pipeline = GetOrCreatePipeline(context, store, driver, isTransparent);
 
         // Get camera and light binding sets (shared across all materials using this pipeline)
         var cameraBindingSet = driver.CreateBindingSetForPipeline(pipeline, 0, [new UniformBufferBinding { Buffer = scene.CameraBuffer, Binding = 0 }]);
@@ -98,22 +98,22 @@ public sealed class MaterialManager
             NormalMapTexture = normalMapTexture,
         };
 
-        return context.AddMaterial(material);
+        return store.AddMaterial(material);
     }
 
-    private IRenderPipeline GetOrCreatePipeline(RenderContext context, IRenderDriver driver, bool transparent)
+    private IRenderPipeline GetOrCreatePipeline(RenderContext context, RenderResourceStore store, IRenderDriver driver, bool transparent)
     {
         ref var cache = ref transparent ? ref _transparentPipeline : ref _opaquePipeline;
         if (cache != null) return cache;
-        return cache = CreatePipeline(context, driver, transparent);
+        return cache = CreatePipeline(context, store, driver, transparent);
     }
 
-    private IRenderPipeline CreatePipeline(RenderContext context, IRenderDriver driver, bool transparent)
+    private IRenderPipeline CreatePipeline(RenderContext context, RenderResourceStore store, IRenderDriver driver, bool transparent)
     {
         var vertexShader = context.ShaderCache.GetOrCreateShader(driver, BasicLitShaders.WGSL, "vs_main");
         var fragmentShader = context.ShaderCache.GetOrCreateShader(driver, BasicLitShaders.WGSL, "fs_main");
 
-        var mesh = context.Meshes[0];
+        var mesh = store.Meshes[0];
 
         var colorTarget = transparent
             ? new ColorTargetDescriptor { Format = DriverPixelFormat.RGBA16Float, Blend = AlphaBlend }

@@ -13,12 +13,13 @@ public static class SceneInitializer
     /// <summary>
     /// Runs the full default initialization: GPU buffers → default cube → default material → sprite pipeline.
     /// </summary>
-    public static void Initialize(RenderContext context, GpuSceneData scene, IRenderDriver driver)
+    public static void Initialize(RenderContext context, RenderResourceStore store, GpuSceneData scene, SpriteRenderState spriteState, IRenderDriver driver)
     {
+        scene.Driver = driver;
         SceneBuffers.Create(scene, driver);
         context.RenderGraph.RegisterExternalTexture("ShadowDepth", scene.ShadowDepthTexture!);
-        BuiltinMeshes.CreateDefaultCube(context, driver);
-        BuiltinMaterials.CreateDefaultMaterial(context, scene, driver);
-        SpriteResources.Create(context, driver);
+        BuiltinMeshes.CreateDefaultCube(context, store, driver);
+        BuiltinMaterials.CreateDefaultMaterial(context, store, scene, driver);
+        SpriteResources.Create(context, spriteState, driver);
     }
 }

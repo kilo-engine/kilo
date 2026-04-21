@@ -14,28 +14,13 @@ namespace Kilo.Rendering;
 /// </summary>
 public sealed class PostProcessSystem
 {
-    [StructLayout(LayoutKind.Sequential)]
+    [StructLayout(LayoutKind.Sequential, Size = 256)]
     private struct PostProcessParams
     {
         public float BloomThreshold;
         public float BloomIntensity;
         public float BloomEnabled;
         public float ToneMapEnabled;
-        private Vector4 _pad0;
-        private Vector4 _pad1;
-        private Vector4 _pad2;
-        private Vector4 _pad3;
-        private Vector4 _pad4;
-        private Vector4 _pad5;
-        private Vector4 _pad6;
-        private Vector4 _pad7;
-        private Vector4 _pad8;
-        private Vector4 _pad9;
-        private Vector4 _pad10;
-        private Vector4 _pad11;
-        private Vector4 _pad12;
-        private Vector4 _pad13;
-        private Vector4 _pad14;
     }
 
     private const int WorkgroupSize = 16;
@@ -62,7 +47,7 @@ public sealed class PostProcessSystem
         var context = world.GetResource<RenderContext>();
         var driver = context.Driver;
         var settings = world.GetResource<RenderSettings>();
-        var pp = context.PostProcess;
+        var pp = world.GetResource<PostProcessState>();
         var graph = context.RenderGraph;
 
         // Lazy init GPU resources (pipelines, sampler, params buffer)
@@ -102,7 +87,7 @@ public sealed class PostProcessSystem
 
         if (!bloom && !tonemap && !fxaa)
         {
-            AddBlitToTarget(graph, driver, ctx, pp, sceneColorName);
+            AddBlitToTarget(graph, driver, ctx, pp, sceneColorName, DriverPixelFormat.RGBA16Float);
             return;
         }
 
@@ -121,11 +106,11 @@ public sealed class PostProcessSystem
         else if (tonemap)
         {
             AddCompositeToneMapPass(graph, driver, ctx, pp, camTex, sceneColorName, compositeInput, toneMappedName);
-            AddBlitToTarget(graph, driver, ctx, pp, toneMappedName);
+            AddBlitToTarget(graph, driver, ctx, pp, toneMappedName, DriverPixelFormat.RGBA8Unorm);
         }
         else if (bloom)
         {
-            AddBlitToTarget(graph, driver, ctx, pp, sceneColorName);
+            AddBlitToTarget(graph, driver, ctx, pp, sceneColorName, DriverPixelFormat.RGBA16Float);
         }
     }
 
@@ -402,14 +387,14 @@ public sealed class PostProcessSystem
     }
 
     private static void AddBlitToTarget(RenderGraph.RenderGraph graph, IRenderDriver driver,
-        CameraRenderContext ctx, PostProcessState pp, string sourceName)
+        CameraRenderContext ctx, PostProcessState pp, string sourceName, DriverPixelFormat sourceFormat)
     {
         graph.AddPass($"{ctx.Prefix}Blit", setup: pass =>
         {
             var source = pass.ImportTexture(sourceName, new TextureDescriptor
             {
                 Width = ctx.Width, Height = ctx.Height,
-                Format = sourceName.Contains("SceneColor") ? DriverPixelFormat.RGBA16Float : DriverPixelFormat.RGBA8Unorm,
+                Format = sourceFormat,
                 Usage = TextureUsage.ShaderBinding,
             });
             pass.ReadTexture(source);

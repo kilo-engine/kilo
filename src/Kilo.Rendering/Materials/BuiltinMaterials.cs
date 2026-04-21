@@ -10,9 +10,9 @@ internal static class BuiltinMaterials
     /// Creates the default BasicLit material via MaterialManager.
     /// All binding set details are centralized in MaterialManager — no duplication here.
     /// </summary>
-    public static void CreateDefaultMaterial(RenderContext context, GpuSceneData scene, IRenderDriver driver)
+    public static MaterialHandle CreateDefaultMaterial(RenderContext context, RenderResourceStore store, GpuSceneData scene, IRenderDriver driver)
     {
-        context.MaterialManager.CreateMaterial(context, scene, new MaterialDescriptor
+        return context.MaterialManager.CreateMaterial(context, store, scene, new MaterialDescriptor
         {
             BaseColor = Vector4.One,
             Metallic = 0.0f,

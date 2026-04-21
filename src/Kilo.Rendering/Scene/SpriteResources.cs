@@ -10,7 +10,7 @@ internal static class SpriteResources
     /// <summary>
     /// Creates sprite rendering pipeline and resources (quad mesh, uniform buffer, binding set).
     /// </summary>
-    public static void Create(RenderContext context, IRenderDriver driver)
+    public static void Create(RenderContext context, SpriteRenderState spriteState, IRenderDriver driver)
     {
         var spriteVertexShader = context.ShaderCache.GetOrCreateShader(driver, SpriteShaders.WGSL, "vs_main");
         var spriteFragmentShader = context.ShaderCache.GetOrCreateShader(driver, SpriteShaders.WGSL, "fs_main");
@@ -69,7 +69,7 @@ internal static class SpriteResources
             DepthStencil = null,
         };
 
-        context.Sprite.Pipeline = context.PipelineCache.GetOrCreate(driver, spritePipelineKey, () => driver.CreateRenderPipelineWithDynamicUniforms(new RenderPipelineDescriptor
+        spriteState.Pipeline = context.PipelineCache.GetOrCreate(driver, spritePipelineKey, () => driver.CreateRenderPipelineWithDynamicUniforms(new RenderPipelineDescriptor
         {
             VertexShader = spriteVertexShader,
             FragmentShader = spriteFragmentShader,
@@ -81,27 +81,27 @@ internal static class SpriteResources
         float[] quadVertices = [-0.5f, 0.5f, 0.5f, 0.5f, -0.5f, -0.5f, 0.5f, -0.5f];
         uint[] quadIndices = [0u, 1, 2, 2, 1, 3];
 
-        context.Sprite.QuadVertexBuffer = driver.CreateBuffer(new BufferDescriptor
+        spriteState.QuadVertexBuffer = driver.CreateBuffer(new BufferDescriptor
         {
             Size = (nuint)(quadVertices.Length * sizeof(float)),
             Usage = BufferUsage.Vertex | BufferUsage.CopyDst,
         });
-        context.Sprite.QuadVertexBuffer.UploadData<float>(quadVertices);
+        spriteState.QuadVertexBuffer.UploadData<float>(quadVertices);
 
-        context.Sprite.QuadIndexBuffer = driver.CreateBuffer(new BufferDescriptor
+        spriteState.QuadIndexBuffer = driver.CreateBuffer(new BufferDescriptor
         {
             Size = (nuint)(quadIndices.Length * sizeof(uint)),
             Usage = BufferUsage.Index | BufferUsage.CopyDst,
         });
-        context.Sprite.QuadIndexBuffer.UploadData<uint>(quadIndices);
+        spriteState.QuadIndexBuffer.UploadData<uint>(quadIndices);
 
-        context.Sprite.UniformBuffer = driver.CreateBuffer(new BufferDescriptor
+        spriteState.UniformBuffer = driver.CreateBuffer(new BufferDescriptor
         {
             Size = (nuint)UniformBufferSize,
             Usage = BufferUsage.Uniform | BufferUsage.CopyDst,
         });
 
-        context.Sprite.BindingSet = driver.CreateDynamicUniformBindingSet(
-            context.Sprite.Pipeline, 0, context.Sprite.UniformBuffer, UniformStructSize);
+        spriteState.BindingSet = driver.CreateDynamicUniformBindingSet(
+            spriteState.Pipeline, 0, spriteState.UniformBuffer, UniformStructSize);
     }
 }

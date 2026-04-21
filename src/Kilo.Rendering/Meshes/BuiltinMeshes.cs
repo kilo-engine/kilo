@@ -1,5 +1,6 @@
 using Kilo.Rendering.Driver;
 using Kilo.Rendering.RenderGraph;
+using Kilo.Rendering.Scene;
 
 namespace Kilo.Rendering.Meshes;
 
@@ -9,7 +10,7 @@ internal static class BuiltinMeshes
     /// Creates the default unit cube mesh (pos3 + normal3 + uv2 + tangent4 = 12 floats per vertex = 48 bytes).
     /// Tangent w-component (handedness) is always 1.0 for builtin geometry.
     /// </summary>
-    public static void CreateDefaultCube(RenderContext context, IRenderDriver driver)
+    public static MeshHandle CreateDefaultCube(RenderContext context, RenderResourceStore store, IRenderDriver driver)
     {
         // pos(3) + normal(3) + uv(2) + tangent(4) = 12 floats per vertex
         float[] cubeVertices =
@@ -111,6 +112,6 @@ internal static class BuiltinMeshes
             ]
         };
 
-        context.AddMesh(cubeMesh);
+        return store.AddMesh(cubeMesh);
     }
 }

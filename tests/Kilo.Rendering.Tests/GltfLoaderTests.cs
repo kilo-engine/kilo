@@ -78,18 +78,13 @@ public class GltfLoaderTests
         return tempPath;
     }
 
-    private static RenderContext SetupContext(MockRenderDriver driver)
+    private static (RenderContext context, RenderResourceStore store) SetupContext(MockRenderDriver driver)
     {
         var context = new RenderContext { Driver = driver, ShaderCache = new ShaderCache(), PipelineCache = new PipelineCache() };
-        var scene = new GpuSceneData
-        {
-            CameraBuffer = driver.CreateBuffer(new RenderGraph.BufferDescriptor { Size = 256, Usage = RenderGraph.BufferUsage.Uniform }),
-            ObjectDataBuffer = driver.CreateBuffer(new RenderGraph.BufferDescriptor { Size = 4096, Usage = RenderGraph.BufferUsage.Uniform }),
-            LightBuffer = driver.CreateBuffer(new RenderGraph.BufferDescriptor { Size = 1024, Usage = RenderGraph.BufferUsage.Uniform }),
-        };
+        var store = new RenderResourceStore();
 
         // Default cube mesh (required by MaterialManager for pipeline layout)
-        context.AddMesh(new Mesh
+        store.AddMesh(new Mesh
         {
             VertexBuffer = driver.CreateBuffer(new RenderGraph.BufferDescriptor { Size = 256, Usage = RenderGraph.BufferUsage.Vertex }),
             IndexBuffer = driver.CreateBuffer(new RenderGraph.BufferDescriptor { Size = 64, Usage = RenderGraph.BufferUsage.Index }),
@@ -109,7 +104,7 @@ public class GltfLoaderTests
             ]
         });
 
-        return context;
+        return (context, store);
     }
 
     [Fact]
@@ -119,19 +114,19 @@ public class GltfLoaderTests
         try
         {
             var driver = new MockRenderDriver();
-            var context = SetupContext(driver);
-            var scene = context.Driver == driver ? new GpuSceneData
+            var (context, store) = SetupContext(driver);
+            var scene = new GpuSceneData
             {
                 CameraBuffer = driver.CreateBuffer(new RenderGraph.BufferDescriptor { Size = 256, Usage = RenderGraph.BufferUsage.Uniform }),
                 ObjectDataBuffer = driver.CreateBuffer(new RenderGraph.BufferDescriptor { Size = 4096, Usage = RenderGraph.BufferUsage.Uniform }),
                 LightBuffer = driver.CreateBuffer(new RenderGraph.BufferDescriptor { Size = 1024, Usage = RenderGraph.BufferUsage.Uniform }),
-            } : null!;
+            };
 
-            var result = GltfLoader.Load(path, driver, context, scene);
+            var result = GltfLoader.Load(path, driver, context, store, scene);
 
             Assert.Single(result.Primitives);
-            Assert.Equal(2, context.Meshes.Count); // cube + gltf
-            Assert.Equal(1, context.Materials.Count);
+            Assert.Equal(2, store.Meshes.Count); // cube + gltf
+            Assert.Equal(1, store.Materials.Count);
         }
         finally
         {
@@ -146,7 +141,7 @@ public class GltfLoaderTests
         try
         {
             var driver = new MockRenderDriver();
-            var context = SetupContext(driver);
+            var (context, store) = SetupContext(driver);
             var scene = new GpuSceneData
             {
                 CameraBuffer = driver.CreateBuffer(new RenderGraph.BufferDescriptor { Size = 256, Usage = RenderGraph.BufferUsage.Uniform }),
@@ -154,10 +149,10 @@ public class GltfLoaderTests
                 LightBuffer = driver.CreateBuffer(new RenderGraph.BufferDescriptor { Size = 1024, Usage = RenderGraph.BufferUsage.Uniform }),
             };
 
-            var result = GltfLoader.Load(path, driver, context, scene);
+            var result = GltfLoader.Load(path, driver, context, store, scene);
 
             Assert.Equal(2, result.Primitives.Count);
-            Assert.Equal(1 + 2, context.Meshes.Count);
+            Assert.Equal(1 + 2, store.Meshes.Count);
         }
         finally
         {
@@ -170,9 +165,10 @@ public class GltfLoaderTests
     {
         var driver = new MockRenderDriver();
         var context = new RenderContext { Driver = driver };
+        var store = new RenderResourceStore();
         var scene = new GpuSceneData();
 
         Assert.ThrowsAny<Exception>(() =>
-            GltfLoader.Load("nonexistent_file.glb", driver, context, scene));
+            GltfLoader.Load("nonexistent_file.glb", driver, context, store, scene));
     }
 }

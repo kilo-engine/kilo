@@ -34,7 +34,7 @@ internal static class GltfNodeCollector
 /// </summary>
 public sealed class GltfModel
 {
-    public List<(int MeshHandle, int MaterialHandle)> Primitives { get; } = [];
+    public List<(MeshHandle MeshHandle, MaterialHandle MaterialHandle)> Primitives { get; } = [];
     public SkeletonData? Skeleton { get; set; }
     public List<AnimationClip> Animations { get; set; } = [];
     public int[]? JointEntityIds { get; set; }
@@ -59,6 +59,7 @@ public static class GltfLoader
         string path,
         IRenderDriver driver,
         RenderContext context,
+        RenderResourceStore store,
         GpuSceneData scene)
     {
         var model = SharpGLTF.Schema2.ModelRoot.Load(path);
@@ -115,7 +116,7 @@ public static class GltfLoader
 
             foreach (var primitive in node.Mesh.Primitives)
             {
-                var (meshHandle, materialHandle) = GltfPrimitiveProcessor.LoadPrimitive(primitive, driver, context, scene, result);
+                var (meshHandle, materialHandle) = GltfPrimitiveProcessor.LoadPrimitive(primitive, driver, context, store, scene, result);
                 result.Primitives.Add((meshHandle, materialHandle));
             }
         }

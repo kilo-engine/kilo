@@ -30,7 +30,7 @@ public sealed class SkyboxRenderSystem
 
     private void InitResources(KiloWorld world, IRenderDriver driver, RenderContext context, RenderSettings settings)
     {
-        var skybox = context.Skybox;
+        var skybox = world.GetResource<SkyboxState>();
         // Load cubemap
         var loader = new CubemapLoader();
         ITextureView cubemapView;
@@ -132,17 +132,4 @@ public sealed class SkyboxRenderSystem
         skybox.CameraBinding = cameraBinding;
         skybox.TextureBinding = textureBinding;
     }
-}
-
-/// <summary>
-/// Shared skybox rendering state, initialized by SkyboxRenderSystem, used by RenderSystem.
-/// </summary>
-public sealed class SkyboxState
-{
-    public IRenderPipeline Pipeline { get; set; } = null!;
-    public IBuffer VertexBuffer { get; set; } = null!;
-    public IBuffer IndexBuffer { get; set; } = null!;
-    public IBuffer CameraBuffer { get; set; } = null!;
-    public IBindingSet CameraBinding { get; set; } = null!;
-    public IBindingSet TextureBinding { get; set; } = null!;
 }

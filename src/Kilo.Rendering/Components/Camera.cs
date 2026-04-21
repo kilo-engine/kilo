@@ -25,10 +25,51 @@ public enum RenderLayers
 public struct Camera
 {
     public Camera() { }
-    /// <summary>View matrix (world to camera space).</summary>
+
+    /// <summary>
+    /// Creates a perspective camera with sensible defaults for 3D scene rendering.
+    /// </summary>
+    public static Camera Perspective(float fieldOfView = MathF.PI / 4f, float nearPlane = 0.1f, float farPlane = 100f)
+    {
+        return new Camera
+        {
+            FieldOfView = fieldOfView,
+            NearPlane = nearPlane,
+            FarPlane = farPlane,
+            IsActive = true,
+            Priority = 0,
+            Target = CameraTarget.Screen,
+            ClearSettings = CameraClearSettings.Skybox,
+            CameraType = CameraType.Scene,
+            PostProcessEnabled = true,
+            RenderLayers = RenderLayers.All,
+        };
+    }
+
+    /// <summary>
+    /// Creates a UI overlay camera that renders sprites and text on top of the scene.
+    /// </summary>
+    public static Camera UIOverlay(int priority = 2, RenderLayers layers = RenderLayers.Sprites | RenderLayers.Text)
+    {
+        return new Camera
+        {
+            FieldOfView = MathF.PI / 4f,
+            NearPlane = 0.1f,
+            FarPlane = 100f,
+            IsActive = true,
+            Priority = priority,
+            Target = CameraTarget.Screen,
+            ClearSettings = CameraClearSettings.DontClear,
+            CameraType = CameraType.UIOverlay,
+            PostProcessEnabled = false,
+            RenderLayers = layers,
+        };
+    }
+
+    /// <summary>View matrix (world to camera space). System-managed — do not set manually.</summary>
     public Matrix4x4 ViewMatrix;
 
-    /// <summary>Projection matrix (camera to clip space).</summary>
+    /// <summary>Projection matrix (camera to clip space). System-managed — do not set manually.</summary>
     public Matrix4x4 ProjectionMatrix;
 
     /// <summary>Field of view in radians.</summary>

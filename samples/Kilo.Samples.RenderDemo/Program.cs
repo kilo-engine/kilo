@@ -53,6 +53,7 @@ app.AddPlugin(plugin);
 app.AddSystem(KiloStage.Startup, world =>
 {
     var context = world.GetResource<RenderContext>();
+    var store = world.GetResource<RenderResourceStore>();
     var scene = world.GetResource<GpuSceneData>();
     var driver = context.Driver!;
 
@@ -69,10 +70,10 @@ app.AddSystem(KiloStage.Startup, world =>
     var metallic = new[] { 0.0f, 1.0f, 0.5f, 0.0f, 0.0f, 0.0f };
     var roughness = new[] { 0.8f, 0.3f, 0.1f, 0.5f, 0.5f, 0.5f };
 
-    var materialIds = new int[colors.Length];
+    var materialIds = new MaterialHandle[colors.Length];
     for (int i = 0; i < colors.Length; i++)
     {
-        materialIds[i] = context.MaterialManager.CreateMaterial(context, scene, new MaterialDescriptor
+        materialIds[i] = context.MaterialManager.CreateMaterial(context, store, scene, new MaterialDescriptor
         {
             BaseColor = colors[i],
             Metallic = metallic[i],
@@ -95,7 +96,7 @@ app.AddSystem(KiloStage.Startup, world =>
                 Scale = Vector3.One
             })
             .Set(new LocalToWorld())
-            .Set(new MeshRenderer { MeshHandle = 0, MaterialHandle = materialIds[i] });
+            .Set(new MeshRenderer { MeshHandle = new MeshHandle(0), MaterialHandle = materialIds[i] });
     }
 
     // ── 纹理立方体 ────────────────────────────────────────────────────────
@@ -116,7 +117,7 @@ app.AddSystem(KiloStage.Startup, world =>
         }
         var tempPath = Path.Combine(Path.GetTempPath(), $"kilo_checker_{Guid.NewGuid():N}.png");
         checkerImage.SaveAsPng(tempPath);
-        var texturedMaterial = context.MaterialManager.CreateMaterial(context, scene, new MaterialDescriptor
+        var texturedMaterial = context.MaterialManager.CreateMaterial(context, store, scene, new MaterialDescriptor
         {
             AlbedoTexturePath = tempPath,
             BaseColor = new Vector4(1f, 1f, 1f, 0.7f),
@@ -131,7 +132,7 @@ app.AddSystem(KiloStage.Startup, world =>
                 Scale = Vector3.One
             })
             .Set(new LocalToWorld())
-            .Set(new MeshRenderer { MeshHandle = 0, MaterialHandle = texturedMaterial });
+            .Set(new MeshRenderer { MeshHandle = new MeshHandle(0), MaterialHandle = texturedMaterial });
     }
 
     // ── 骨骼动画演示：2段手臂 ──────────────────────────────────────────────
@@ -253,7 +254,7 @@ app.AddSystem(KiloStage.Startup, world =>
             IndexCount = (uint)skinnedIndices.Length,
             Layouts = [SkinnedMesh.Layout]
         };
-        int skinnedMeshHandle = context.AddMesh(skinnedMesh);
+        MeshHandle skinnedMeshHandle = store.AddMesh(skinnedMesh);
 
         // Create skinned material pipeline
         var skinnedVs = context.ShaderCache.GetOrCreateShader(driver, SkinnedLitShaders.WGSL, "vs_main");
@@ -329,7 +330,7 @@ app.AddSystem(KiloStage.Startup, world =>
             AlbedoTexture = defaultTexture,
             AlbedoSampler = defaultSampler,
         };
-        int skinnedMaterialHandle = context.AddMaterial(skinnedMaterial);
+        MaterialHandle skinnedMaterialHandle = store.AddMaterial(skinnedMaterial);
 
         // Create main entity with skinned mesh
         var animatedArmEntity = world.Entity("AnimatedArm")
@@ -417,6 +418,8 @@ app.AddSystem(KiloStage.Startup, world =>
             FontSize = 24f
         });
 
+    var mainCam = Camera.Perspective(fieldOfView: MathF.PI / 4, nearPlane: 0.1f, farPlane: 100f);
+    mainCam.RenderLayers = RenderLayers.Meshes | RenderLayers.Particles;
     world.Entity("Camera")
         .Set(new LocalTransform
         {
@@ -424,14 +427,7 @@ app.AddSystem(KiloStage.Startup, world =>
             Rotation = Quaternion.Identity,
             Scale = Vector3.One
         })
-        .Set(new Camera
-        {
-            FieldOfView = MathF.PI / 4,
-            NearPlane = 0.1f,
-            FarPlane = 100.0f,
-            IsActive = true,
-            RenderLayers = RenderLayers.Meshes | RenderLayers.Particles,
-        });
+        .Set(mainCam);
 
     // ── UI 覆盖层相机（优先级高于主相机，后渲染） ──────────────────────────
     world.Entity("OverlayCamera")
@@ -441,19 +437,7 @@ app.AddSystem(KiloStage.Startup, world =>
             Rotation = Quaternion.Identity,
             Scale = Vector3.One
         })
-        .Set(new Camera
-        {
-            FieldOfView = MathF.PI / 4,
-            NearPlane = 0.1f,
-            FarPlane = 100.0f,
-            IsActive = true,
-            Priority = 2,
-            CameraType = CameraType.UIOverlay,
-            Target = CameraTarget.Screen,
-            ClearSettings = CameraClearSettings.DontClear,
-            PostProcessEnabled = false,
-            RenderLayers = RenderLayers.Sprites | RenderLayers.Text,
-        });
+        .Set(Camera.UIOverlay(priority: 2, layers: RenderLayers.Sprites | RenderLayers.Text));
 
     // ── 俯视角小地图相机 ──────────────────────────────────────────────────
     var minimapRT = new RenderTexture(256, 256, driver.SwapchainFormat);
@@ -503,7 +487,7 @@ app.AddSystem(KiloStage.Update, world =>
     // ── P 键截图 ─────────────────────────────────────────────────────────
     if (input.IsKeyPressed((int)Key.P))
     {
-        world.GetResource<RenderContext>().Screenshot.Requested = true;
+        world.GetResource<ScreenshotState>().Requested = true;
         Console.WriteLine("[RenderDemo] Screenshot requested (P key)");
     }
 
@@ -729,10 +713,17 @@ public sealed class RenderDemoPlugin : IKiloPlugin
             ShaderCache = new ShaderCache(),
             PipelineCache = new PipelineCache(),
         });
+        app.AddResource(new RenderResourceStore());
         app.AddResource(new WindowSize { Width = _settings.Width, Height = _settings.Height });
         app.AddResource(new GpuSceneData());
         app.AddResource(new ActiveCameraList());
         app.AddResource(new AnimationClipStore());
+        // Subsystem states as independent ECS resources
+        app.AddResource(new SkyboxState());
+        app.AddResource(new ScreenshotState());
+        app.AddResource(new SpriteRenderState());
+        app.AddResource(new PostProcessState());
+        app.AddResource(new ParticleSystemState());
         // 输入
         app.AddResource(new InputState());
         app.AddResource(new InputSettings());
@@ -777,7 +768,7 @@ public sealed class RenderDemoPlugin : IKiloPlugin
         var driver = context.Driver!;
         var graph = context.RenderGraph;
         var ws = world.GetResource<WindowSize>();
-        var pp = context.PostProcess;
+        var pp = world.GetResource<PostProcessState>();
 
         if (!pp.Initialized) return;
 
@@ -857,7 +848,7 @@ public sealed class RenderDemoPlugin : IKiloPlugin
     // ── GLTF 实体创建（静态 + 骨骼动画） ────────────────────────────────────
     private static void SetupGltfEntities(
         KiloWorld world, GltfModel gltfModel,
-        IRenderDriver driver, RenderContext context, GpuSceneData scene)
+        IRenderDriver driver, RenderContext context, RenderResourceStore store, GpuSceneData scene)
     {
         // Compute model scale from actual bounding box
         var extent = gltfModel.BBoxMax - gltfModel.BBoxMin;
@@ -987,7 +978,7 @@ public sealed class RenderDemoPlugin : IKiloPlugin
         var (firstMeshHandle, firstMatHandle) = gltfModel.Primitives[0];
 
         // Re-create material with skinned pipeline using GLTF texture if available
-        var origMaterial = context.Materials[firstMatHandle];
+        var origMaterial = store.Materials[firstMatHandle.Value];
         var albedoTexture = origMaterial.AlbedoTexture;
         var albedoSampler = origMaterial.AlbedoSampler ?? defaultSampler;
 
@@ -1034,7 +1025,7 @@ public sealed class RenderDemoPlugin : IKiloPlugin
             AlbedoTexture = albedoTexture,
             AlbedoSampler = albedoSampler,
         };
-        int skinnedMatHandle = context.AddMaterial(skinnedMaterial);
+        MaterialHandle skinnedMatHandle = store.AddMaterial(skinnedMaterial);
 
         // Additional primitives as children of the main entity so they share the model transform
         for (int p = 0; p < gltfModel.Primitives.Count; p++)
@@ -1060,6 +1051,7 @@ public sealed class RenderDemoPlugin : IKiloPlugin
         Console.WriteLine("[Kilo] Creating window...");
         var window = WindowHelper.CreateWindow(_settings.Width, _settings.Height, _settings.Title, _settings.VSync);
         var context = app.World.GetResource<RenderContext>();
+        var store = app.World.GetResource<RenderResourceStore>();
         var scene = app.World.GetResource<GpuSceneData>();
 
         window.Load += () =>
@@ -1067,7 +1059,7 @@ public sealed class RenderDemoPlugin : IKiloPlugin
             Console.WriteLine("[Kilo] Window loaded, initializing WebGPU...");
             var driver = WebGPUDriverFactory.Create(window, _settings);
             context.Driver = driver;
-            SceneInitializer.Initialize(context, scene, driver);
+            SceneInitializer.Initialize(context, store, scene, app.World.GetResource<SpriteRenderState>(), driver);
             InputWiring.WireInputEvents(window, app.World);
 
             // Load GLTF model if path provided
@@ -1075,8 +1067,8 @@ public sealed class RenderDemoPlugin : IKiloPlugin
             if (modelPath != null && File.Exists(modelPath))
             {
                 Console.WriteLine($"[Kilo] Loading GLTF model: {modelPath}");
-                var gltfModel = GltfLoader.Load(modelPath, driver, context, scene);
-                SetupGltfEntities(app.World, gltfModel, driver, context, scene);
+                var gltfModel = GltfLoader.Load(modelPath, driver, context, store, scene);
+                SetupGltfEntities(app.World, gltfModel, driver, context, store, scene);
                 Console.WriteLine($"[Kilo] Loaded {gltfModel.Primitives.Count} primitives, " +
                     $"Skinned={gltfModel.IsSkinned}, Animations={gltfModel.Animations.Count}");
             }
@@ -1090,24 +1082,26 @@ public sealed class RenderDemoPlugin : IKiloPlugin
             app.Update();
             _frameCount++;
 
+            var screenshotState = app.World.GetResource<ScreenshotState>();
+
             // Auto-screenshot after 30 frames (skip first frames for initialization)
             if (_frameCount == 30)
             {
-                context.Screenshot.Requested = true;
+                screenshotState.Requested = true;
                 Console.WriteLine($"[Kilo] Auto-screenshot at frame {_frameCount}");
             }
 
             // Process screenshot readback after render graph execution
-            if (context.Screenshot.HasPending && context.Screenshot.Buffer != null)
+            if (screenshotState.HasPending && screenshotState.Buffer != null)
             {
-                context.Screenshot.HasPending = false;
+                screenshotState.HasPending = false;
                 var driver = context.Driver;
-                var width = context.Screenshot.Width;
-                var height = context.Screenshot.Height;
-                var alignedBytesPerRow = context.Screenshot.AlignedBytesPerRow;
+                var width = screenshotState.Width;
+                var height = screenshotState.Height;
+                var alignedBytesPerRow = screenshotState.AlignedBytesPerRow;
                 var requiredSize = (nuint)(alignedBytesPerRow * height);
-                var pixelData = driver.ReadBufferSync(context.Screenshot.Buffer, 0, requiredSize);
-                context.Screenshot.Buffer = null;
+                var pixelData = driver.ReadBufferSync(screenshotState.Buffer, 0, requiredSize);
+                screenshotState.Buffer = null;
                 SaveScreenshot(width, height, alignedBytesPerRow, pixelData);
             }
         };

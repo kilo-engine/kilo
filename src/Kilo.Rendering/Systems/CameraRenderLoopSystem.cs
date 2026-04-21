@@ -1,6 +1,7 @@
 using System.Numerics;
 using Kilo.ECS;
 using Kilo.Rendering.Driver;
+using Kilo.Rendering.Particles;
 using Kilo.Rendering.RenderGraph;
 using Kilo.Rendering.Scene;
 
@@ -49,7 +50,8 @@ public sealed class CameraRenderLoopSystem
                 // Particles
                 if (layers.HasFlag(RenderLayers.Particles))
                 {
-                    ParticleRenderSystem.EnsureRenderPipeline(context);
+                    var particles = world.GetResource<ParticleSystemState>();
+                    ParticleRenderSystem.EnsureRenderPipeline(context, particles);
                     _particle.AddParticlePass(ctx, world);
                 }
 
@@ -66,13 +68,13 @@ public sealed class CameraRenderLoopSystem
                 else
                 {
                     // Blit SceneColor directly to output (backbuffer or RenderTexture)
-                    AddBlitToOutput(graph, driver, ctx, context);
+                    AddBlitToOutput(graph, driver, ctx, world);
                 }
             }
             else // UIOverlay
             {
                 // 2D overlay: render sprites + text to an overlay texture, then composite onto backbuffer
-                var pp = context.PostProcess;
+                var pp = world.GetResource<PostProcessState>();
                 if (!pp.Initialized)
                 {
                     PostProcessSystem.InitPipelinesStatic(context, driver, pp);
@@ -140,10 +142,11 @@ public sealed class CameraRenderLoopSystem
     }
 
     private static void AddBlitToOutput(RenderGraph.RenderGraph graph, IRenderDriver driver,
-        CameraRenderContext ctx, RenderContext context)
+        CameraRenderContext ctx, KiloWorld world)
     {
         // Ensure blit resources are initialized even if PostProcessSystem hasn't run
-        var pp = context.PostProcess;
+        var context = world.GetResource<RenderContext>();
+        var pp = world.GetResource<PostProcessState>();
         if (!pp.Initialized)
         {
             PostProcessSystem.InitPipelinesStatic(context, driver, pp);

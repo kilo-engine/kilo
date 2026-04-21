@@ -36,18 +36,13 @@ public class TextureLoadingTests
         return tempPath;
     }
 
-    private static RenderContext SetupContext(MockRenderDriver driver)
+    private static (RenderContext context, RenderResourceStore store) SetupContext(MockRenderDriver driver)
     {
         var context = new RenderContext { Driver = driver, ShaderCache = new ShaderCache(), PipelineCache = new PipelineCache() };
-        var scene = new GpuSceneData
-        {
-            CameraBuffer = driver.CreateBuffer(new RenderGraph.BufferDescriptor { Size = 256, Usage = RenderGraph.BufferUsage.Uniform }),
-            ObjectDataBuffer = driver.CreateBuffer(new RenderGraph.BufferDescriptor { Size = 4096, Usage = RenderGraph.BufferUsage.Uniform }),
-            LightBuffer = driver.CreateBuffer(new RenderGraph.BufferDescriptor { Size = 1024, Usage = RenderGraph.BufferUsage.Uniform }),
-        };
+        var store = new RenderResourceStore();
 
         // Default cube mesh (required by MaterialManager for pipeline layout)
-        context.AddMesh(new Mesh
+        store.AddMesh(new Mesh
         {
             VertexBuffer = driver.CreateBuffer(new RenderGraph.BufferDescriptor { Size = 256, Usage = RenderGraph.BufferUsage.Vertex }),
             IndexBuffer = driver.CreateBuffer(new RenderGraph.BufferDescriptor { Size = 64, Usage = RenderGraph.BufferUsage.Index }),
@@ -67,7 +62,7 @@ public class TextureLoadingTests
             ]
         });
 
-        return context;
+        return (context, store);
     }
 
     [Fact]
@@ -77,7 +72,7 @@ public class TextureLoadingTests
         try
         {
             var driver = new MockRenderDriver();
-            var context = SetupContext(driver);
+            var (context, store) = SetupContext(driver);
             var scene = new GpuSceneData
             {
                 CameraBuffer = driver.CreateBuffer(new RenderGraph.BufferDescriptor { Size = 256, Usage = RenderGraph.BufferUsage.Uniform }),
@@ -85,10 +80,10 @@ public class TextureLoadingTests
                 LightBuffer = driver.CreateBuffer(new RenderGraph.BufferDescriptor { Size = 1024, Usage = RenderGraph.BufferUsage.Uniform }),
             };
 
-            var materialHandle = context.MaterialManager.CreateMaterial(context, scene,
+            var materialHandle = context.MaterialManager.CreateMaterial(context, store, scene,
                 new MaterialDescriptor { AlbedoTexturePath = path });
 
-            var material = context.Materials[materialHandle];
+            var material = store.Materials[materialHandle.Value];
             Assert.True(material.UseTexture);
             Assert.NotNull(material.AlbedoTexture);
             Assert.NotNull(material.AlbedoSampler);
@@ -103,7 +98,7 @@ public class TextureLoadingTests
     public void MaterialManager_CreateMaterial_WithoutTexture_SetsUseTextureFalse()
     {
         var driver = new MockRenderDriver();
-        var context = SetupContext(driver);
+        var (context, store) = SetupContext(driver);
         var scene = new GpuSceneData
         {
             CameraBuffer = driver.CreateBuffer(new RenderGraph.BufferDescriptor { Size = 256, Usage = RenderGraph.BufferUsage.Uniform }),
@@ -111,10 +106,10 @@ public class TextureLoadingTests
             LightBuffer = driver.CreateBuffer(new RenderGraph.BufferDescriptor { Size = 1024, Usage = RenderGraph.BufferUsage.Uniform }),
         };
 
-        var materialHandle = context.MaterialManager.CreateMaterial(context, scene,
+        var materialHandle = context.MaterialManager.CreateMaterial(context, store, scene,
             new MaterialDescriptor { BaseColor = new Vector4(1, 0, 0, 1) });
 
-        var material = context.Materials[materialHandle];
+        var material = store.Materials[materialHandle.Value];
         Assert.False(material.UseTexture);
         Assert.Null(material.AlbedoTexture);
     }
@@ -126,7 +121,7 @@ public class TextureLoadingTests
         try
         {
             var driver = new MockRenderDriver();
-            var context = SetupContext(driver);
+            var (context, store) = SetupContext(driver);
             var scene = new GpuSceneData
             {
                 CameraBuffer = driver.CreateBuffer(new RenderGraph.BufferDescriptor { Size = 256, Usage = RenderGraph.BufferUsage.Uniform }),
@@ -134,13 +129,13 @@ public class TextureLoadingTests
                 LightBuffer = driver.CreateBuffer(new RenderGraph.BufferDescriptor { Size = 1024, Usage = RenderGraph.BufferUsage.Uniform }),
             };
 
-            var handle1 = context.MaterialManager.CreateMaterial(context, scene,
+            var handle1 = context.MaterialManager.CreateMaterial(context, store, scene,
                 new MaterialDescriptor { AlbedoTexturePath = path, BaseColor = new Vector4(1, 0, 0, 1) });
-            var handle2 = context.MaterialManager.CreateMaterial(context, scene,
+            var handle2 = context.MaterialManager.CreateMaterial(context, store, scene,
                 new MaterialDescriptor { AlbedoTexturePath = path, BaseColor = new Vector4(0, 1, 0, 1) });
 
-            var mat1 = context.Materials[handle1];
-            var mat2 = context.Materials[handle2];
+            var mat1 = store.Materials[handle1.Value];
+            var mat2 = store.Materials[handle2.Value];
 
             Assert.NotNull(mat1.AlbedoTexture);
             Assert.NotNull(mat2.AlbedoTexture);
@@ -163,7 +158,7 @@ public class TextureLoadingTests
             world.AddResource(new WindowSize { Width = 1280, Height = 720 });
 
             var driver = new MockRenderDriver();
-            var context = SetupContext(driver);
+            var (context, store) = SetupContext(driver);
             var scene = new GpuSceneData
             {
                 CameraBuffer = driver.CreateBuffer(new RenderGraph.BufferDescriptor { Size = 256, Usage = RenderGraph.BufferUsage.Uniform }),
@@ -172,21 +167,22 @@ public class TextureLoadingTests
             };
 
             world.AddResource(context);
+            world.AddResource(store);
             world.AddResource(scene);
 
-            var textureHandle = context.MaterialManager.CreateMaterial(context, scene,
+            var textureHandle = context.MaterialManager.CreateMaterial(context, store, scene,
                 new MaterialDescriptor { AlbedoTexturePath = path });
 
             var entity = world.Entity();
             entity.Set(new LocalToWorld { Value = Matrix4x4.Identity });
-            entity.Set(new MeshRenderer { MeshHandle = 0, MaterialHandle = textureHandle });
+            entity.Set(new MeshRenderer { MeshHandle = new MeshHandle(0), MaterialHandle = textureHandle });
 
             new CameraPrepareSystem().Update(world);
             new ObjectPrepareSystem().Update(world);
             new LightPrepareSystem().Update(world);
 
             Assert.Equal(1, scene.DrawCount);
-            Assert.Equal(textureHandle, scene.GetDraw(0).MaterialId);
+            Assert.Equal(textureHandle, scene.GetDraw(0).MaterialHandle);
         }
         finally
         {
@@ -201,7 +197,7 @@ public class TextureLoadingTests
         try
         {
             var driver = new MockRenderDriver();
-            var context = SetupContext(driver);
+            var (context, store) = SetupContext(driver);
             var scene = new GpuSceneData
             {
                 CameraBuffer = driver.CreateBuffer(new RenderGraph.BufferDescriptor { Size = 256, Usage = RenderGraph.BufferUsage.Uniform }),
@@ -209,10 +205,10 @@ public class TextureLoadingTests
                 LightBuffer = driver.CreateBuffer(new RenderGraph.BufferDescriptor { Size = 1024, Usage = RenderGraph.BufferUsage.Uniform }),
             };
 
-            var materialHandle = context.MaterialManager.CreateMaterial(context, scene,
+            var materialHandle = context.MaterialManager.CreateMaterial(context, store, scene,
                 new MaterialDescriptor { AlbedoTexturePath = path });
 
-            var material = context.Materials[materialHandle];
+            var material = store.Materials[materialHandle.Value];
             Assert.NotNull(material.AlbedoTexture);
 
             // MockTexture stores Width and Height from the descriptor
@@ -259,7 +255,7 @@ public class TextureLoadingTests
 
             // Step 3: Load the GLB and verify UseTexture is true
             var driver = new MockRenderDriver();
-            var context = SetupContext(driver);
+            var (context, store) = SetupContext(driver);
             var sceneData = new GpuSceneData
             {
                 CameraBuffer = driver.CreateBuffer(new RenderGraph.BufferDescriptor { Size = 256, Usage = RenderGraph.BufferUsage.Uniform }),
@@ -267,16 +263,16 @@ public class TextureLoadingTests
                 LightBuffer = driver.CreateBuffer(new RenderGraph.BufferDescriptor { Size = 1024, Usage = RenderGraph.BufferUsage.Uniform }),
             };
 
-            var result = GltfLoader.Load(glbPath, driver, context, sceneData);
+            var result = GltfLoader.Load(glbPath, driver, context, store, sceneData);
 
             Assert.Single(result.Primitives);
             var meshHandle = result.Primitives[0].MeshHandle;
             var materialHandle = result.Primitives[0].MaterialHandle;
 
-            Assert.NotNull(context.Meshes[meshHandle]);
-            Assert.NotNull(context.Materials[materialHandle]);
+            Assert.NotNull(store.Meshes[meshHandle.Value]);
+            Assert.NotNull(store.Materials[materialHandle.Value]);
 
-            var material = context.Materials[materialHandle];
+            var material = store.Materials[materialHandle.Value];
             Assert.True(material.UseTexture);
             Assert.NotNull(material.AlbedoTexture);
             Assert.NotNull(material.AlbedoSampler);

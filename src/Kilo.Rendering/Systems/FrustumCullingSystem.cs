@@ -14,7 +14,7 @@ public sealed class FrustumCullingSystem
 {
     public void Update(KiloWorld world)
     {
-        var context = world.GetResource<RenderContext>();
+        var store = world.GetResource<RenderResourceStore>();
 
         // Build frustum from the active camera
         var cameraQuery = world.QueryBuilder()
@@ -57,7 +57,7 @@ public sealed class FrustumCullingSystem
             {
                 var entityId = new EntityId(entities[i].ID);
 
-                if (renderers[i].MeshHandle < 0)
+                if (!renderers[i].MeshHandle.IsValid)
                 {
                     // Invalid mesh → mark culled
                     if (!world.Has<Culled>(entityId))
@@ -66,7 +66,7 @@ public sealed class FrustumCullingSystem
                 }
 
                 // Transform local AABB to world space using actual mesh bounds
-                var mesh = context.Meshes[renderers[i].MeshHandle];
+                var mesh = store.Meshes[renderers[i].MeshHandle.Value];
                 var worldAABB = TransformAABB(mesh.Bounds, transforms[i].Value);
                 bool visible = frustum.IntersectsAABB(worldAABB.Min, worldAABB.Max);
 

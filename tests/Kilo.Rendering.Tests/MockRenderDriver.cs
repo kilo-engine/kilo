@@ -67,11 +67,6 @@ public sealed class MockRenderCommandEncoder : IRenderCommandEncoder
     public int DrawIndexedCallCount { get; private set; }
     public List<string> ComputeCalls { get; } = [];
 
-    public void BeginRenderPass(ITexture colorTarget, DriverLoadAction loadAction, DriverStoreAction storeAction, in Vector4 clearColor)
-    {
-        InRenderPass = true;
-    }
-
     public void BeginRenderPass(RenderPassDescriptor descriptor)
     {
         LastRenderPassDescriptor = descriptor;

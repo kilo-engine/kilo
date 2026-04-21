@@ -1,4 +1,5 @@
 using Kilo.ECS;
+using Kilo.Rendering.Scene;
 using Xunit;
 
 namespace Kilo.Rendering.Tests;
@@ -32,6 +33,12 @@ public class PluginRegistrationTests
         var world = app.World;
         Assert.NotNull(world.GetResource<RenderSettings>());
         Assert.NotNull(world.GetResource<RenderContext>());
+        Assert.NotNull(world.GetResource<RenderResourceStore>());
+        Assert.NotNull(world.GetResource<GpuSceneData>());
+        Assert.NotNull(world.GetResource<ScreenshotState>());
+        Assert.NotNull(world.GetResource<SpriteRenderState>());
+        Assert.NotNull(world.GetResource<PostProcessState>());
+        Assert.NotNull(world.GetResource<SkyboxState>());
         // WindowSize is a struct, so we just verify it exists
         var windowSize = world.GetResource<WindowSize>();
         Assert.Equal(1280, windowSize.Width);

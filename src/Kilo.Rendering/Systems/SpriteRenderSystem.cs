@@ -49,6 +49,7 @@ public sealed class SpriteRenderSystem
         var context = world.GetResource<RenderContext>();
         var driver = context.Driver;
         var graph = context.RenderGraph;
+        var sprite = world.GetResource<SpriteRenderState>();
 
         // Orthographic projection
         float aspect = (float)ctx.Width / ctx.Height;
@@ -79,11 +80,11 @@ public sealed class SpriteRenderSystem
 
         int totalDrawn = sprites.Count;
         const int UniformAlign = 256;
-        int maxSprites = context.Sprite.UniformBuffer is not null ? (int)(context.Sprite.UniformBuffer.Size / (nuint)UniformAlign) : 0;
+        int maxSprites = sprite.UniformBuffer is not null ? (int)(sprite.UniformBuffer.Size / (nuint)UniformAlign) : 0;
         int drawCount = Math.Min(sprites.Count, maxSprites);
 
         // Bulk upload all sprite instance data before drawing
-        if (drawCount > 0 && context.Sprite.UniformBuffer is not null)
+        if (drawCount > 0 && sprite.UniformBuffer is not null)
         {
             var instanceData = new SpriteInstanceData[drawCount];
             for (int i = 0; i < drawCount; i++)
@@ -92,7 +93,7 @@ public sealed class SpriteRenderSystem
                 instanceData[i].Projection = projection;
                 instanceData[i].Color = sprites[i].Color;
             }
-            context.Sprite.UniformBuffer.UploadData<SpriteInstanceData>(instanceData.AsSpan());
+            sprite.UniformBuffer.UploadData<SpriteInstanceData>(instanceData.AsSpan());
         }
 
         graph.AddPass($"{ctx.Prefix}Sprite", setup: pass =>
@@ -107,11 +108,11 @@ public sealed class SpriteRenderSystem
             pass.WriteTexture(sceneColor);
             pass.ColorAttachment(sceneColor, DriverLoadAction.Load, DriverStoreAction.Store);
 
-            if (context.Sprite.UniformBuffer is not null)
+            if (sprite.UniformBuffer is not null)
             {
                 var uniformBufferHandle = pass.ImportBuffer("SpriteUniformBuffer", new BufferDescriptor
                 {
-                    Size = context.Sprite.UniformBuffer.Size,
+                    Size = sprite.UniformBuffer.Size,
                     Usage = BufferUsage.Uniform | BufferUsage.CopyDst,
                 });
                 pass.ReadBuffer(uniformBufferHandle);
@@ -119,14 +120,14 @@ public sealed class SpriteRenderSystem
         }, execute: exeCtx =>
         {
             var encoder = exeCtx.Encoder;
-            encoder.SetPipeline(context.Sprite.Pipeline!);
-            encoder.SetVertexBuffer(0, context.Sprite.QuadVertexBuffer!);
-            encoder.SetIndexBuffer(context.Sprite.QuadIndexBuffer!);
+            encoder.SetPipeline(sprite.Pipeline!);
+            encoder.SetVertexBuffer(0, sprite.QuadVertexBuffer!);
+            encoder.SetIndexBuffer(sprite.QuadIndexBuffer!);
 
             for (int i = 0; i < drawCount; i++)
             {
                 uint offset = (uint)(i * UniformAlign);
-                encoder.SetBindingSet(0, context.Sprite.BindingSet!, offset);
+                encoder.SetBindingSet(0, sprite.BindingSet!, offset);
                 encoder.DrawIndexed(6);
             }
         });

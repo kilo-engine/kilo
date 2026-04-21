@@ -13,7 +13,6 @@ public sealed unsafe class WebGPUCommandEncoder : IRenderCommandEncoder
     private CommandEncoder* _encoder;
     private RenderPassEncoder* _renderPass;
     private ComputePassEncoder* _computePass;
-    private TextureView* _legacyColorView;
     private bool _inRenderPass;
     private bool _inComputePass;
     private bool _disposed;
@@ -23,34 +22,6 @@ public sealed unsafe class WebGPUCommandEncoder : IRenderCommandEncoder
         _wgpu = wgpu;
         _device = device;
         _encoder = encoder;
-    }
-
-    // Legacy overload for backward compatibility
-    public void BeginRenderPass(ITexture colorTarget, DriverLoadAction loadAction, DriverStoreAction storeAction, in Vector4 clearColor)
-    {
-        EndAnyPass();
-
-        var wgpuTexture = (WebGPUTexture)colorTarget;
-        _legacyColorView = _wgpu.TextureCreateView(wgpuTexture.NativePtr, null);
-
-        var colorAttachment = new RenderPassColorAttachment
-        {
-            View = _legacyColorView,
-            ResolveTarget = null,
-            LoadOp = MapLoadOp(loadAction),
-            StoreOp = MapStoreOp(storeAction),
-            ClearValue = new Color { R = clearColor.X, G = clearColor.Y, B = clearColor.Z, A = clearColor.W }
-        };
-
-        var desc = new Silk.NET.WebGPU.RenderPassDescriptor
-        {
-            ColorAttachments = &colorAttachment,
-            ColorAttachmentCount = 1,
-            DepthStencilAttachment = null
-        };
-
-        _renderPass = _wgpu.CommandEncoderBeginRenderPass(_encoder, in desc);
-        _inRenderPass = true;
     }
 
     public void BeginRenderPass(Kilo.Rendering.Driver.RenderPassDescriptor descriptor)
@@ -175,12 +146,6 @@ public sealed unsafe class WebGPUCommandEncoder : IRenderCommandEncoder
         _wgpu.RenderPassEncoderRelease(_renderPass);
         _renderPass = null;
         _inRenderPass = false;
-
-        if (_legacyColorView != null)
-        {
-            _wgpu.TextureViewRelease(_legacyColorView);
-            _legacyColorView = null;
-        }
     }
 
     // Compute

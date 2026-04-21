@@ -20,21 +20,23 @@ public class SpriteRenderSystemTests
         var driver = new MockRenderDriver();
         var context = new RenderContext { Driver = driver };
 
-        // Create sprite resources
-        context.Sprite.QuadVertexBuffer = driver.CreateBuffer(new BufferDescriptor { Size = 64, Usage = BufferUsage.Vertex });
-        context.Sprite.QuadIndexBuffer = driver.CreateBuffer(new BufferDescriptor { Size = 64, Usage = BufferUsage.Index });
-        context.Sprite.UniformBuffer = driver.CreateBuffer(new BufferDescriptor { Size = 4096, Usage = BufferUsage.Uniform | BufferUsage.CopyDst });
-        context.Sprite.Pipeline = driver.CreateRenderPipeline(new RenderPipelineDescriptor
+        // Create sprite resources as a separate state
+        var sprite = new SpriteRenderState();
+        sprite.QuadVertexBuffer = driver.CreateBuffer(new BufferDescriptor { Size = 64, Usage = BufferUsage.Vertex });
+        sprite.QuadIndexBuffer = driver.CreateBuffer(new BufferDescriptor { Size = 64, Usage = BufferUsage.Index });
+        sprite.UniformBuffer = driver.CreateBuffer(new BufferDescriptor { Size = 4096, Usage = BufferUsage.Uniform | BufferUsage.CopyDst });
+        sprite.Pipeline = driver.CreateRenderPipeline(new RenderPipelineDescriptor
         {
             VertexShader = driver.CreateShaderModule("", "vs"),
             FragmentShader = driver.CreateShaderModule("", "fs"),
         });
-        context.Sprite.BindingSet = driver.CreateBindingSet(new BindingSetDescriptor
+        sprite.BindingSet = driver.CreateBindingSet(new BindingSetDescriptor
         {
             Layout = new BindingSetLayout { Entries = [] }
         });
 
         world.AddResource(context);
+        world.AddResource(sprite);
         world.AddResource(new WindowSize { Width = 1280, Height = 720 });
 
         // Create 3 sprite entities
@@ -82,20 +84,22 @@ public class SpriteRenderSystemTests
         var driver = new MockRenderDriver();
         var context = new RenderContext { Driver = driver };
 
-        context.Sprite.QuadVertexBuffer = driver.CreateBuffer(new BufferDescriptor { Size = 64, Usage = BufferUsage.Vertex });
-        context.Sprite.QuadIndexBuffer = driver.CreateBuffer(new BufferDescriptor { Size = 64, Usage = BufferUsage.Index });
-        context.Sprite.UniformBuffer = driver.CreateBuffer(new BufferDescriptor { Size = 4096, Usage = BufferUsage.Uniform | BufferUsage.CopyDst });
-        context.Sprite.Pipeline = driver.CreateRenderPipeline(new RenderPipelineDescriptor
+        var sprite = new SpriteRenderState();
+        sprite.QuadVertexBuffer = driver.CreateBuffer(new BufferDescriptor { Size = 64, Usage = BufferUsage.Vertex });
+        sprite.QuadIndexBuffer = driver.CreateBuffer(new BufferDescriptor { Size = 64, Usage = BufferUsage.Index });
+        sprite.UniformBuffer = driver.CreateBuffer(new BufferDescriptor { Size = 4096, Usage = BufferUsage.Uniform | BufferUsage.CopyDst });
+        sprite.Pipeline = driver.CreateRenderPipeline(new RenderPipelineDescriptor
         {
             VertexShader = driver.CreateShaderModule("", "vs"),
             FragmentShader = driver.CreateShaderModule("", "fs"),
         });
-        context.Sprite.BindingSet = driver.CreateBindingSet(new BindingSetDescriptor
+        sprite.BindingSet = driver.CreateBindingSet(new BindingSetDescriptor
         {
             Layout = new BindingSetLayout { Entries = [] }
         });
 
         world.AddResource(context);
+        world.AddResource(sprite);
         world.AddResource(new WindowSize { Width = 1280, Height = 720 });
 
         var system = new SpriteRenderSystem();

@@ -1,6 +1,7 @@
 using Kilo.ECS;
 using Kilo.Rendering.Driver;
 using Kilo.Rendering.Materials;
+using Kilo.Rendering.Particles;
 using Kilo.Rendering.Scene;
 
 namespace Kilo.Rendering;
@@ -22,9 +23,17 @@ public sealed class RenderingPlugin : IKiloPlugin
             ShaderCache = new ShaderCache(),
             PipelineCache = new PipelineCache(),
         });
+        app.AddResource(new RenderResourceStore());
         app.AddResource(new WindowSize { Width = _settings.Width, Height = _settings.Height });
         app.AddResource(new GpuSceneData());
         app.AddResource(new ActiveCameraList());
+
+        // Subsystem states as independent ECS resources
+        app.AddResource(new SkyboxState());
+        app.AddResource(new ScreenshotState());
+        app.AddResource(new SpriteRenderState());
+        app.AddResource(new PostProcessState());
+        app.AddResource(new ParticleSystemState());
 
         app.AddSystem(KiloStage.PostUpdate, new LocalToWorldSystem().Update);
         app.AddSystem(KiloStage.First, new CameraSystem().Update);

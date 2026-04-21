@@ -19,6 +19,7 @@ public class RenderSystemTests
         var driver = new MockRenderDriver();
         var context = new RenderContext { Driver = driver };
         world.AddResource(context);
+        world.AddResource(new RenderResourceStore());
         world.AddResource(new WindowSize { Width = 1280, Height = 720 });
         world.AddResource(new GpuSceneData
         {
@@ -26,6 +27,8 @@ public class RenderSystemTests
             ObjectDataBuffer = driver.CreateBuffer(new RenderGraph.BufferDescriptor { Size = 1024, Usage = RenderGraph.BufferUsage.Uniform }),
             LightBuffer = driver.CreateBuffer(new RenderGraph.BufferDescriptor { Size = 1024, Usage = RenderGraph.BufferUsage.Uniform }),
         });
+        world.AddResource(new SkyboxState());
+        world.AddResource(new PostProcessState());
 
         var system = new RenderSystem();
         var exception = Record.Exception(() => system.Update(world));
@@ -38,6 +41,7 @@ public class RenderSystemTests
         var world = new KiloWorld();
         var driver = new MockRenderDriver();
         var context = new RenderContext { Driver = driver };
+        var store = new RenderResourceStore();
 
         // Create a fake mesh
         var mesh = new Mesh
@@ -47,7 +51,7 @@ public class RenderSystemTests
             IndexCount = 36,
             Layouts = []
         };
-        context.AddMesh(mesh);
+        store.AddMesh(mesh);
 
         // Create a fake material
         var pipeline = driver.CreateRenderPipeline(new RenderPipelineDescriptor
@@ -74,9 +78,10 @@ public class RenderSystemTests
                 }),
             ]
         };
-        context.AddMaterial(material);
+        store.AddMaterial(material);
 
         world.AddResource(context);
+        world.AddResource(store);
         world.AddResource(new WindowSize { Width = 1280, Height = 720 });
         var scene = new GpuSceneData
         {
@@ -84,8 +89,10 @@ public class RenderSystemTests
             ObjectDataBuffer = driver.CreateBuffer(new RenderGraph.BufferDescriptor { Size = 1024, Usage = RenderGraph.BufferUsage.Uniform }),
             LightBuffer = driver.CreateBuffer(new RenderGraph.BufferDescriptor { Size = 1024, Usage = RenderGraph.BufferUsage.Uniform }),
         };
-        scene.SetDrawData([new DrawData { MeshHandle = 0, MaterialId = 0 }], 1, 1);
+        scene.SetDrawData([new DrawData { MeshHandle = new MeshHandle(0), MaterialHandle = new MaterialHandle(0) }], 1, 1);
         world.AddResource(scene);
+        world.AddResource(new SkyboxState());
+        world.AddResource(new PostProcessState());
 
         var system = new RenderSystem();
         var exception = Record.Exception(() => system.Update(world));

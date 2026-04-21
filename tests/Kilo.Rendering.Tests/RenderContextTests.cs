@@ -9,11 +9,10 @@ public class RenderContextTests
     {
         var context = new RenderContext();
         Assert.Null(context.Driver);
-        Assert.Null(context.Sprite.Pipeline);
-        Assert.Null(context.Sprite.QuadVertexBuffer);
-        Assert.Null(context.Sprite.QuadIndexBuffer);
-        Assert.Null(context.Sprite.UniformBuffer);
-        Assert.Null(context.Sprite.BindingSet);
         Assert.False(context.WindowResized);
+        Assert.NotNull(context.ShaderCache);
+        Assert.NotNull(context.PipelineCache);
+        Assert.NotNull(context.MaterialManager);
+        Assert.NotNull(context.RenderGraph);
     }
 }

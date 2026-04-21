@@ -37,8 +37,8 @@ public class ComponentTests
     public void MeshRenderer_HasCorrectDefaults()
     {
         var renderer = new MeshRenderer();
-        Assert.Equal(0, renderer.MeshHandle);
-        Assert.Equal(0, renderer.MaterialHandle);
+        Assert.Equal(default(MeshHandle), renderer.MeshHandle);
+        Assert.Equal(default(MaterialHandle), renderer.MaterialHandle);
     }
 
     [Fact]

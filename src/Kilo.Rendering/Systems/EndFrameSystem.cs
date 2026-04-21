@@ -9,7 +9,7 @@ public sealed class EndFrameSystem
         var context = world.GetResource<RenderContext>();
         var driver = context.Driver;
         var graph = context.RenderGraph;
-        var screenshot = context.Screenshot;
+        var screenshot = world.GetResource<ScreenshotState>();
 
         // Add screenshot copy pass as the very last pass (after sprites/text)
         if (screenshot.Requested)

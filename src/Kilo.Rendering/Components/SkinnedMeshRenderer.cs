@@ -8,11 +8,11 @@ namespace Kilo.Rendering;
 /// </summary>
 public struct SkinnedMeshRenderer
 {
-    /// <summary>Handle/index to the skinned mesh resource.</summary>
-    public int MeshHandle;
+    /// <summary>Handle to the skinned mesh resource.</summary>
+    public MeshHandle MeshHandle;
 
-    /// <summary>Handle/index to the material resource.</summary>
-    public int MaterialHandle;
+    /// <summary>Handle to the material resource.</summary>
+    public MaterialHandle MaterialHandle;
 
     /// <summary>GPU buffer holding joint matrices (array of mat4x4).</summary>
     public IBuffer? JointMatrixBuffer;

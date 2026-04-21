@@ -5,9 +5,9 @@ namespace Kilo.Rendering;
 /// </summary>
 public struct MeshRenderer
 {
-    /// <summary>Handle/index to the mesh resource.</summary>
-    public int MeshHandle;
+    /// <summary>Handle to the mesh resource.</summary>
+    public MeshHandle MeshHandle;
 
-    /// <summary>Handle/index to the material resource.</summary>
-    public int MaterialHandle;
+    /// <summary>Handle to the material resource.</summary>
+    public MaterialHandle MaterialHandle;
 }

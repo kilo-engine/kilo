@@ -41,9 +41,10 @@ public sealed class RenderSystem
         var context = world.GetResource<RenderContext>();
         var driver = context.Driver;
         var scene = world.GetResource<GpuSceneData>();
-        var skybox = context.Skybox;
+        var store = world.GetResource<RenderResourceStore>();
+        var skybox = world.GetResource<SkyboxState>();
         var graph = context.RenderGraph;
-        var pp = context.PostProcess;
+        var pp = world.GetResource<PostProcessState>();
 
         // Ensure per-camera resources (SceneColor texture + camera buffer)
         var camTex = pp.GetCameraTextures(ctx.Prefix);
@@ -112,7 +113,7 @@ public sealed class RenderSystem
             scene.CurrentCameraBuffer = camTex.CameraBuffer;
 
             // 1) Skybox — only when clear mode is Skybox
-            if (skybox?.Pipeline != null && ctx.Camera.ClearSettings.Mode == CameraClearMode.Skybox)
+            if (skybox.Pipeline != null && ctx.Camera.ClearSettings.Mode == CameraClearMode.Skybox)
             {
                 skybox.CameraBuffer.UploadData<CameraData>(camData);
 
@@ -126,11 +127,11 @@ public sealed class RenderSystem
 
             // 2) Opaque draws
             for (int i = 0; i < scene.OpaqueCount; i++)
-                scene.EmitDraw(encoder, context, i);
+                DrawEmitter.EmitDraw(encoder, scene, store, i);
 
             // 3) Transparent draws
             for (int i = scene.OpaqueCount; i < scene.DrawCount; i++)
-                scene.EmitDraw(encoder, context, i);
+                DrawEmitter.EmitDraw(encoder, scene, store, i);
         });
     }
 }

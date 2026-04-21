@@ -4,10 +4,6 @@ namespace Kilo.Rendering.Driver;
 
 public interface IRenderCommandEncoder : IDisposable
 {
-    // Legacy overload for backward compatibility
-    void BeginRenderPass(ITexture colorTarget, DriverLoadAction loadAction, DriverStoreAction storeAction, in Vector4 clearColor);
-
-    // Modern render pass descriptor
     void BeginRenderPass(RenderPassDescriptor descriptor);
     void SetPipeline(IRenderPipeline pipeline);
     void SetViewport(float x, float y, float width, float height, float minDepth = 0, float maxDepth = 1);
