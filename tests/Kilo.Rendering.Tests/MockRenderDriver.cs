@@ -79,7 +79,7 @@ public sealed class MockRenderCommandEncoder : IRenderCommandEncoder
     public void SetVertexBuffer(int slot, IBuffer buffer) { }
     public void SetIndexBuffer(IBuffer buffer) { }
     public void SetBindingSet(int group, IBindingSet bindingSet, uint dynamicOffset) { }
-    public void DrawIndexed(int indexCount, int instanceCount) { DrawIndexedCallCount++; }
+    public void DrawIndexed(int indexCount, int instanceCount, int firstIndex, int baseVertex) { DrawIndexedCallCount++; }
     public void Draw(int vertexCount, int instanceCount) { }
     public void EndRenderPass()
     {

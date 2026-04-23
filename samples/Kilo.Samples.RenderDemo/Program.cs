@@ -9,6 +9,7 @@
 //   5) 输入系统：WASD/QE 相机移动 + 按键状态控制台输出
 //   6) GLTF 模型加载：传入 .gltf/.glb 文件路径即可加载
 //   7) 骨骼动画演示：2 关节程序化手臂，N 键播放/暂停，M 键切换循环
+//   8) ImGui 调试面板：FPS、相机参数、后处理控制、动画控制
 //
 // 运行方式：
 //   dotnet run --project samples/Kilo.Samples.RenderDemo
@@ -36,6 +37,7 @@ using Kilo.Rendering.Particles;
 using Kilo.Rendering.Text;
 using Kilo.Rendering.Scene;
 using Kilo.Rendering.Shaders;
+using ImGuiNET;
 using Silk.NET.Input;
 using Silk.NET.Maths;
 using Silk.NET.Windowing;
@@ -54,6 +56,7 @@ var settings = new RenderSettings
 
 var plugin = new RenderDemoPlugin(settings, modelPath: args.Length > 0 ? args[0] : null);
 app.AddPlugin(plugin);
+app.AddPlugin(new ImGuiPlugin());
 
 // ── 场景创建 ────────────────────────────────────────────────────────────────
 app.AddSystem(KiloStage.Startup, world =>
@@ -514,6 +517,8 @@ app.AddSystem(KiloStage.Startup, world =>
 // ── 每帧更新：动作映射 + 相机控制 + 立方体旋转 + 精灵动画 ──────────────────
 var _time = 0f;
 var _lastTime = DateTime.Now;
+var _inputBuf = string.Empty;
+var _inputLog = new List<string>();
 app.AddSystem(KiloStage.Update, world =>
 {
     var now = DateTime.Now;
@@ -528,8 +533,24 @@ app.AddSystem(KiloStage.Update, world =>
     stack.BeginFrame();
     mapSystem.Update(rawInput, stack, deltaTime);
 
-    // ── B 键切换 Compute Blur ─────────────────────────────────────────────
-    if (stack.JustPressed("ToggleBlur"))
+    // ── ImGui 输入更新 + 绘制 ──────────────────────────────────────────────
+    var imguiCtrl = world.GetResource<ImGuiController>();
+    var ws = world.GetResource<WindowSize>();
+    imguiCtrl.UpdateInput(
+        ws.Width, ws.Height,
+        rawInput.MousePosition, rawInput.ScrollDelta,
+        rawInput.MouseButtonsDown, rawInput.KeysDown,
+        rawInput.KeysPressed, rawInput.KeysReleased,
+        rawInput.TextInput.ToArray(), deltaTime);
+    ImGui.NewFrame();
+
+    // ImGui 捕获输入时跳过游戏逻辑
+    bool imguiWantsInput = imguiCtrl.WantCaptureKeyboard || imguiCtrl.WantCaptureMouse;
+
+    if (!imguiWantsInput)
+    {
+        // ── B 键切换 Compute Blur ─────────────────────────────────────────────
+        if (stack.JustPressed("ToggleBlur"))
     {
         var settings = world.GetResource<RenderSettings>();
         settings.BloomEnabled = !settings.BloomEnabled;
@@ -666,6 +687,7 @@ app.AddSystem(KiloStage.Update, world =>
             transforms[i].Position = pos;
         }
     }
+    } // end if (!imguiWantsInput)
 
     // ── 立方体自旋 ─────────────────────────────────────────────────────────
     var cubeQuery = world.QueryBuilder()
@@ -718,6 +740,121 @@ app.AddSystem(KiloStage.Update, world =>
             }
             si++;
         }
+    }
+
+    // ── ImGui 调试面板 ──────────────────────────────────────────────────────
+    {
+        ImGui.SetNextWindowSize(new System.Numerics.Vector2(350, 300), ImGuiCond.FirstUseEver);
+        ImGui.SetNextWindowPos(new System.Numerics.Vector2(10, 10), ImGuiCond.FirstUseEver);
+        ImGui.Begin("Kilo Debug");
+
+        // FPS
+        ImGui.Text($"FPS: {ImGui.GetIO().Framerate:F1}");
+        ImGui.Text($"Time: {_time:F1}s");
+        ImGui.Separator();
+
+        // Camera
+        var camQ = world.QueryBuilder().With<LocalTransform>().With<Camera>().Build();
+        var camI = camQ.Iter();
+        while (camI.Next())
+        {
+            var t = camI.Data<LocalTransform>(camI.GetColumnIndexOf<LocalTransform>());
+            for (int i = 0; i < camI.Count; i++)
+            {
+                var p = t[i].Position;
+                ImGui.Text($"Camera: ({p.X:F1}, {p.Y:F1}, {p.Z:F1})");
+            }
+        }
+
+        ImGui.Separator();
+
+        // Post-processing
+        var rs = world.GetResource<RenderSettings>();
+        bool bloom = rs.BloomEnabled;
+        if (ImGui.Checkbox("Bloom", ref bloom))
+        {
+            rs.BloomEnabled = bloom;
+        }
+
+        ImGui.Separator();
+
+        // Animation controls
+        var animQ = world.QueryBuilder().With<AnimationPlayer>().Build();
+        var animI = animQ.Iter();
+        while (animI.Next())
+        {
+            var players = animI.Data<AnimationPlayer>(animI.GetColumnIndexOf<AnimationPlayer>());
+            for (int i = 0; i < animI.Count; i++)
+            {
+                var p = players[i];
+                bool playing = p.IsPlaying;
+                if (ImGui.Checkbox($"Playing##{i}", ref playing))
+                    players[i].IsPlaying = playing;
+
+                ImGui.SameLine();
+                bool loop = players[i].Loop;
+                if (ImGui.Checkbox($"Loop##{i}", ref loop))
+                    players[i].Loop = loop;
+
+                ImGui.Text($"  Clip: {p.ClipIndex}, Time: {p.Time:F2}s");
+            }
+        }
+
+        ImGui.Separator();
+        ImGui.Text("Keyboard: WASD=Move QE=Up/Down B=Bloom P=Screenshot N/M/G=Anim");
+
+        ImGui.Separator();
+
+        // ── 输入框测试 ─────────────────────────────────────────────────────
+        ImGui.Text("Input Test:");
+        bool enter = ImGui.InputText("##cmd", ref _inputBuf, 256, ImGuiInputTextFlags.EnterReturnsTrue);
+        bool deactivated = ImGui.IsItemDeactivatedAfterEdit();
+        if ((enter || deactivated) && !string.IsNullOrWhiteSpace(_inputBuf))
+        {
+            _inputLog.Add(_inputBuf.Trim());
+            _inputBuf = string.Empty;
+        }
+
+        // 按钮：和键盘快捷键效果相同
+        if (ImGui.SmallButton("Toggle Bloom##btn"))
+        {
+            rs.BloomEnabled = !rs.BloomEnabled;
+        }
+        ImGui.SameLine();
+        if (ImGui.SmallButton("Screenshot##btn"))
+        {
+            world.GetResource<ScreenshotState>().Requested = true;
+        }
+        ImGui.SameLine();
+        if (ImGui.SmallButton("Play/Pause##btn"))
+        {
+            var aq = world.QueryBuilder().With<AnimationPlayer>().Build();
+            var ai = aq.Iter();
+            while (ai.Next())
+            {
+                var ps = ai.Data<AnimationPlayer>(ai.GetColumnIndexOf<AnimationPlayer>());
+                for (int j = 0; j < ai.Count; j++)
+                    ps[j].IsPlaying = !ps[j].IsPlaying;
+            }
+        }
+        ImGui.SameLine();
+        if (ImGui.SmallButton("Loop##btn"))
+        {
+            var aq = world.QueryBuilder().With<AnimationPlayer>().Build();
+            var ai = aq.Iter();
+            while (ai.Next())
+            {
+                var ps = ai.Data<AnimationPlayer>(ai.GetColumnIndexOf<AnimationPlayer>());
+                for (int j = 0; j < ai.Count; j++)
+                    ps[j].Loop = !ps[j].Loop;
+            }
+        }
+
+        // 显示已提交的文本
+        for (int li = 0; li < _inputLog.Count; li++)
+            ImGui.TextWrapped($"> {_inputLog[li]}");
+
+        ImGui.End();
     }
 });
 
@@ -786,6 +923,7 @@ public sealed class RenderDemoPlugin : IKiloPlugin
         app.AddSystem(KiloStage.Last, new ParticleUpdateSystem().Update);
         app.AddSystem(KiloStage.Last, new CameraRenderLoopSystem().Update);
         app.AddSystem(KiloStage.Last, MinimapBlitSystem);
+        app.AddSystem(KiloStage.Last, new ImGuiRenderSystem().Update);
         app.AddSystem(KiloStage.Last, new EndFrameSystem().Update);
         app.AddSystem(KiloStage.Last, new WindowResizeSystem().Update);
         // Reset per-frame input state AFTER all systems have read it
@@ -1104,6 +1242,10 @@ public sealed class RenderDemoPlugin : IKiloPlugin
             SceneInitializer.Initialize(context, store, scene, app.World.GetResource<SpriteRenderState>(), driver);
             InputWiring.WireInputEvents(window, app.World);
 
+            // Initialize ImGui
+            var imguiCtrl = app.World.GetResource<ImGuiController>();
+            imguiCtrl.Initialize(driver, _settings.Width, _settings.Height);
+
             // Load GLTF model if path provided
             var modelPath = _modelPath ?? FindDefaultModel();
             if (modelPath != null && File.Exists(modelPath))
@@ -1154,6 +1296,8 @@ public sealed class RenderDemoPlugin : IKiloPlugin
             ws.Width = size.X;
             ws.Height = size.Y;
             context.WindowResized = true;
+            var imguiCtrl = app.World.GetResource<ImGuiController>();
+            imguiCtrl.Resize(size.X, size.Y);
         };
 
         window.Closing += () =>

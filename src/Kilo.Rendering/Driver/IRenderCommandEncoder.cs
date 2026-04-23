@@ -11,7 +11,7 @@ public interface IRenderCommandEncoder : IDisposable
     void SetVertexBuffer(int slot, IBuffer buffer);
     void SetIndexBuffer(IBuffer buffer);
     void SetBindingSet(int group, IBindingSet bindingSet, uint dynamicOffset = 0);
-    void DrawIndexed(int indexCount, int instanceCount = 1);
+    void DrawIndexed(int indexCount, int instanceCount = 1, int firstIndex = 0, int baseVertex = 0);
     void Draw(int vertexCount, int instanceCount = 1);
     void EndRenderPass();
 

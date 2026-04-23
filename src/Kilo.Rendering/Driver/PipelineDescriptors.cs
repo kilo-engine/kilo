@@ -1,6 +1,6 @@
 namespace Kilo.Rendering.Driver;
 
-public enum VertexFormat { Float32x2, Float32x3, Float32x4, UInt32, UInt32x4 }
+public enum VertexFormat { Float32x2, Float32x3, Float32x4, UInt32, UInt32x4, Unorm8x4 }
 
 public enum BlendOperation { Add, Subtract, ReverseSubtract, Min, Max }
 

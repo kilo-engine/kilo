@@ -127,10 +127,10 @@ public sealed unsafe class WebGPUCommandEncoder : IRenderCommandEncoder
         _wgpu.RenderPassEncoderSetBindGroup(_renderPass, (uint)group, wgpuBs.NativePtr, count, count > 0 ? &offset : null);
     }
 
-    public void DrawIndexed(int indexCount, int instanceCount)
+    public void DrawIndexed(int indexCount, int instanceCount, int firstIndex, int baseVertex)
     {
         EnsureInRenderPass();
-        _wgpu.RenderPassEncoderDrawIndexed(_renderPass, (uint)indexCount, (uint)instanceCount, 0, 0, 0);
+        _wgpu.RenderPassEncoderDrawIndexed(_renderPass, (uint)indexCount, (uint)instanceCount, (uint)firstIndex, (int)baseVertex, 0);
     }
 
     public void Draw(int vertexCount, int instanceCount)

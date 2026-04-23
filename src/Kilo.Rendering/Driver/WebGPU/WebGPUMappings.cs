@@ -115,6 +115,7 @@ internal static class WebGPUMappings
         VertexFormat.Float32x4 => Silk.NET.WebGPU.VertexFormat.Float32x4,
         VertexFormat.UInt32 => Silk.NET.WebGPU.VertexFormat.Uint32,
         VertexFormat.UInt32x4 => Silk.NET.WebGPU.VertexFormat.Uint32x4,
+        VertexFormat.Unorm8x4 => Silk.NET.WebGPU.VertexFormat.Unorm8x4,
         _ => Silk.NET.WebGPU.VertexFormat.Float32x2,
     };
 

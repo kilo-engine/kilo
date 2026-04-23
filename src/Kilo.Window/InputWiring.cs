@@ -41,6 +41,10 @@ public static class InputWiring
                     inputState.KeysReleased[code] = true;
                 }
             };
+            keyboard.KeyChar += (_, c) =>
+            {
+                inputState.TextInput.Add(c);
+            };
         }
     }
 
