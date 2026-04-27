@@ -1,4 +1,5 @@
 using Kilo.ECS;
+using Friflo.Engine.ECS;
 using Xunit;
 
 namespace Kilo.ECS.Tests;
@@ -59,5 +60,40 @@ public sealed class EntityTests : IDisposable
         EntityId id = 42ul;
         ulong val = id;
         Assert.Equal(42ul, val);
+    }
+
+    [Fact]
+    public void Entity_Hierarchy_AddChild()
+    {
+        var parent = _world.Entity();
+        var child = _world.Entity();
+        parent.AddChild(child);
+        // Verify child exists
+        Assert.True(child.Exists());
+    }
+
+    [Fact]
+    public void Entity_Hierarchy_RemoveChild()
+    {
+        var parent = _world.Entity();
+        var child = _world.Entity();
+        parent.AddChild(child);
+        parent.RemoveChild(child);
+        // Child should still exist, just unlinked
+        Assert.True(child.Exists());
+    }
+
+    [Fact]
+    public void Entity_DeleteWithChildren()
+    {
+        var parent = _world.Entity();
+        var child = _world.Entity();
+        parent.AddChild(child);
+
+        var childId = child.Id;
+        var parentId = parent.Id;
+        _world.Delete(parentId);
+        Assert.False(_world.Exists(parentId));
+        Assert.False(_world.Exists(childId));
     }
 }

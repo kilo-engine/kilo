@@ -1,7 +1,7 @@
 namespace Kilo.ECS;
 
 /// <summary>
-/// Threading mode for system execution. Mirrors TinyEcs.Bevy.ThreadingMode.
+/// Threading mode for system execution.
 /// </summary>
 public enum ThreadingMode
 {

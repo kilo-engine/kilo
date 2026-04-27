@@ -9,8 +9,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\3rd-party\TinyEcs\TinyEcs\TinyEcs.csproj" />
-    <ProjectReference Include="..\..\3rd-party\TinyEcs\TinyEcs.Bevy\TinyEcs.Bevy.csproj" />
+    <PackageReference Include="Friflo.Engine.ECS" Version="3.6.0" />
   </ItemGroup>
 
   <ItemGroup>

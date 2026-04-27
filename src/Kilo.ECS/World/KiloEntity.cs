@@ -1,145 +1,131 @@
 using System.Runtime.CompilerServices;
-using TinyEcs;
+using Friflo.Engine.ECS;
 
 namespace Kilo.ECS;
 
 /// <summary>
-/// Lightweight handle to an entity. Wraps TinyEcs.EntityView with zero overhead.
-/// All operations are forwarded via AggressiveInlining.
+/// Lightweight handle to an entity with zero overhead.
 /// </summary>
 [SkipLocalsInit]
-#pragma warning disable CS0660 // ref structs can't override Equals(object)
+#pragma warning disable CS0660
 public readonly ref struct KiloEntity
 {
-    internal readonly TinyEcs.EntityView _inner;
+    internal readonly Entity _inner;
     internal readonly KiloWorld? _kiloWorld;
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    internal KiloEntity(TinyEcs.EntityView inner, KiloWorld kiloWorld)
+    internal KiloEntity(Entity inner, KiloWorld kiloWorld)
     {
         _inner = inner;
         _kiloWorld = kiloWorld;
     }
 
-    /// <summary>The entity's unique identifier.</summary>
     public EntityId Id
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        get => new(_inner.ID);
+        get => new((ulong)_inner.Id);
     }
 
-    /// <summary>The entity's generation counter.</summary>
-    public int Generation
-    {
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        get => _inner.Generation;
-    }
-
-    /// <summary>A shared invalid entity handle.</summary>
     public static KiloEntity Invalid => default;
 
     // ── Component Operations ─────────────────────────────────
 
-    /// <summary>Set a component on this entity. Returns self for chaining.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public KiloEntity Set<T>(T component = default) where T : struct
+    public KiloEntity Set<T>(T component = default) where T : struct, IComponent
     {
-        _inner.Set(component);
+        _inner.AddComponent(component);
         return this;
     }
 
-    /// <summary>Remove a component or tag from this entity.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public KiloEntity Unset<T>() where T : struct
+    public KiloEntity Unset<T>() where T : struct, IComponent
     {
-        _inner.Unset<T>();
+        _inner.RemoveComponent<T>();
         return this;
     }
 
-    /// <summary>Remove a component or tag by ID from this entity.</summary>
+    /// <summary>Remove a component by registered ID. Requires KiloWorld.RegisterComponentType{T}().</summary>
+    public KiloEntity Unset(ulong componentId) { _kiloWorld?.Unset(Id, componentId); return this; }
+    /// <summary>Remove a component by registered ID. Requires KiloWorld.RegisterComponentType{T}().</summary>
+    public KiloEntity Unset(EntityId componentId) { _kiloWorld?.Unset(Id, componentId.Value); return this; }
+
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public KiloEntity Unset(ulong componentId)
+    public readonly ref T Get<T>() where T : struct, IComponent => ref _inner.GetComponent<T>();
+
+    /// <summary>Get a mutable pointer to component T. Marks the component as changed (like Bevy's <c>Mut&lt;T&gt;</c>).</summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public Ptr<T> GetPtr<T>() where T : struct, IComponent
     {
-        _inner.Unset(componentId);
-        return this;
+        _kiloWorld?.SetChanged<T>(Id);
+        return new Ptr<T>(ref _inner.GetComponent<T>());
     }
 
-    /// <summary>Remove a component or tag from this entity.</summary>
+    /// <summary>Get a read-only pointer. Does not trigger change detection (like Bevy's <c>Ref&lt;T&gt;</c>).</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public KiloEntity Unset(EntityId componentId)
-    {
-        _inner.Unset(componentId.Value);
-        return this;
-    }
+    public readonly PtrRO<T> GetPtrRO<T>() where T : struct, IComponent
+        => new(ref _inner.GetComponent<T>());
 
-    /// <summary>Get a reference to a component on this entity.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public readonly ref T Get<T>() where T : struct => ref _inner.Get<T>();
+    public readonly bool Has<T>() where T : struct, IComponent => _inner.HasComponent<T>();
 
-    /// <summary>Check if this entity has a component or tag.</summary>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public readonly bool Has<T>() where T : struct => _inner.Has<T>();
-
-    /// <summary>Check if this entity has a component or tag by ID.</summary>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public readonly bool Has(ulong componentId) => _inner.Has(componentId);
-
-    /// <summary>Check if this entity has a component or tag.</summary>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public readonly bool Has(EntityId componentId) => _inner.Has(componentId.Value);
+    /// <summary>Check if entity has a component by registered ID. Requires KiloWorld.RegisterComponentType{T}().</summary>
+    public readonly bool Has(ulong componentId) => _kiloWorld?.Has(Id, componentId) ?? false;
+    /// <summary>Check if entity has a component by registered ID. Requires KiloWorld.RegisterComponentType{T}().</summary>
+    public readonly bool Has(EntityId componentId) => _kiloWorld?.Has(Id, componentId.Value) ?? false;
 
     // ── Hierarchy ────────────────────────────────────────────
 
-    /// <summary>Add a child entity. Uses TinyEcs built-in Parent/ChildOf relation.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public KiloEntity AddChild(KiloEntity child)
     {
-        _inner.AddChild(child._inner.ID);
+        _inner.AddChild(child._inner);
         return this;
     }
 
-    /// <summary>Remove a child entity.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public KiloEntity RemoveChild(KiloEntity child)
     {
-        _inner.RemoveChild(child._inner.ID);
+        _inner.RemoveChild(child._inner);
         return this;
     }
 
     // ── Entity Lifecycle ─────────────────────────────────────
 
-    /// <summary>Delete this entity.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public readonly void Delete() => _inner.Delete();
+    public readonly void Delete() => _inner.DeleteEntity();
 
-    /// <summary>Check if this entity is alive.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public readonly bool Exists() => _inner.Exists();
+    public readonly bool Exists() => !_inner.IsNull;
 
-    /// <summary>Mark a component as changed.</summary>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public readonly void SetChanged<T>() where T : struct => _inner.SetChanged<T>();
+    /// <summary>Mark a component as changed. Powers <c>HasChanged&lt;T&gt;</c> query filters.</summary>
+    public readonly void SetChanged<T>() where T : struct, IComponent => _kiloWorld?.SetChanged<T>(Id);
 
-    /// <summary>Get the archetype signature of this entity.</summary>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public readonly ReadOnlySpan<TinyEcs.ComponentInfo> Type() => _inner.Type();
+    public readonly ReadOnlySpan<ComponentInfo> Type()
+    {
+        if (_inner.IsNull) return [];
+        var arch = _inner.Archetype;
+        var types = arch.ComponentTypes;
+        var result = new ComponentInfo[types.Count];
+        int i = 0;
+        foreach (var ct in types)
+            result[i++] = new ComponentInfo((ulong)ct.StructIndex, ct.StructSize);
+        return result;
+    }
 
     // ── Equality ─────────────────────────────────────────────
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public readonly bool Equals(EntityId other) => _inner.ID == other.Value;
+    public readonly bool Equals(EntityId other) => _inner.Id == (int)other.Value;
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public readonly bool Equals(KiloEntity other) => _inner.ID == other._inner.ID;
+    public readonly bool Equals(KiloEntity other) => _inner.Id == other._inner.Id;
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public override readonly int GetHashCode() => _inner.GetHashCode();
+    public override readonly int GetHashCode() => _inner.Id.GetHashCode();
 
-    // Note: ref structs cannot override Equals(object). Use Equals(KiloEntity) instead.
-
-    public static bool operator ==(KiloEntity a, KiloEntity b) => a._inner.ID == b._inner.ID;
-    public static bool operator !=(KiloEntity a, KiloEntity b) => a._inner.ID != b._inner.ID;
+    public static bool operator ==(KiloEntity a, KiloEntity b) => a._inner.Id == b._inner.Id;
+    public static bool operator !=(KiloEntity a, KiloEntity b) => a._inner.Id != b._inner.Id;
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static implicit operator EntityId(KiloEntity e) => new(e._inner.ID);
+    public static implicit operator EntityId(KiloEntity e) => new((ulong)e._inner.Id);
 }

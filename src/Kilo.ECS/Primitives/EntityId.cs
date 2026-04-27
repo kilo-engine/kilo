@@ -3,7 +3,7 @@ using System.Runtime.CompilerServices;
 namespace Kilo.ECS;
 
 /// <summary>
-/// Represents an entity identifier. Wraps a ulong value matching TinyEcs's EcsID layout.
+/// Represents an entity identifier.
 /// Zero overhead: readonly struct with single ulong field, implicit conversions.
 /// </summary>
 [SkipLocalsInit]
@@ -17,14 +17,6 @@ public readonly struct EntityId : IEquatable<EntityId>, IComparable<EntityId>
     /// <summary>Whether this ID refers to a valid (non-zero) entity.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public bool IsValid() => Value != 0;
-
-    /// <summary>Extracts the real entity ID (lower 32 bits).</summary>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public ulong RealId() => Value & 0xFFFFFFFFul;
-
-    /// <summary>Extracts the generation counter (upper 32 bits, lower 16).</summary>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public int Generation() => (int)((Value >> 32) & 0xFFFFul);
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public bool Equals(EntityId other) => Value == other.Value;

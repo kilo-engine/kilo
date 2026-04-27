@@ -4,15 +4,11 @@ namespace Kilo.ECS;
 
 /// <summary>
 /// Group related components for cleaner entity spawning.
-/// Mirrors TinyEcs.Bevy.IBundle.
 /// </summary>
 public interface IKiloBundle
 {
-    /// <summary>Insert all bundle components onto the entity (immediate mode).</summary>
+    /// <summary>Insert all bundle components onto the entity.</summary>
     void Insert(KiloEntity entity);
-
-    /// <summary>Insert all bundle components onto the entity (deferred mode via Commands).</summary>
-    void Insert(TinyEcs.Bevy.EntityCommands entity);
 }
 
 /// <summary>

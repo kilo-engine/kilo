@@ -1,5 +1,4 @@
 using Kilo.ECS;
-using TinyEcs.Bevy;
 using Xunit;
 
 namespace Kilo.ECS.Tests;
@@ -78,7 +77,7 @@ public sealed class AppTests : IDisposable
         var accessed = false;
         _app.AddSystem(KiloStage.Update, world =>
         {
-            var time = world._world.GetResource<TimeResource>();
+            var time = world.GetResource<TimeResource>();
             Assert.Equal(0.016f, time.Delta);
             accessed = true;
         });

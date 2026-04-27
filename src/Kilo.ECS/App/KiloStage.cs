@@ -3,39 +3,49 @@ using System.Runtime.CompilerServices;
 namespace Kilo.ECS;
 
 /// <summary>
-/// Represents an execution stage. Wraps TinyEcs.Bevy.Stage.
-/// Systems are ordered within and across stages.
+/// Represents an execution stage. Backend-agnostic, backed by string name.
 /// </summary>
-public sealed class KiloStage
+public readonly struct KiloStage : IEquatable<KiloStage>
 {
-    internal readonly TinyEcs.Bevy.Stage _inner;
+    public readonly string Name;
 
-    private KiloStage(TinyEcs.Bevy.Stage inner) => _inner = inner;
+    private KiloStage(string name) => Name = name;
 
-    /// <summary>Stage name.</summary>
-    public string Name => _inner.Name;
-
-    /// <summary>Runs once on first frame (always single-threaded).</summary>
-    public static KiloStage Startup { get; } = new(TinyEcs.Bevy.Stage.Startup);
+    /// <summary>Runs once on first frame.</summary>
+    public static KiloStage Startup => new("Startup");
 
     /// <summary>First regular update stage.</summary>
-    public static KiloStage First { get; } = new(TinyEcs.Bevy.Stage.First);
+    public static KiloStage First => new("First");
 
     /// <summary>Before main update.</summary>
-    public static KiloStage PreUpdate { get; } = new(TinyEcs.Bevy.Stage.PreUpdate);
+    public static KiloStage PreUpdate => new("PreUpdate");
 
     /// <summary>Main gameplay logic.</summary>
-    public static KiloStage Update { get; } = new(TinyEcs.Bevy.Stage.Update);
+    public static KiloStage Update => new("Update");
 
     /// <summary>After main update.</summary>
-    public static KiloStage PostUpdate { get; } = new(TinyEcs.Bevy.Stage.PostUpdate);
+    public static KiloStage PostUpdate => new("PostUpdate");
 
     /// <summary>Final stage (rendering, cleanup).</summary>
-    public static KiloStage Last { get; } = new(TinyEcs.Bevy.Stage.Last);
+    public static KiloStage Last => new("Last");
 
     /// <summary>Create a custom stage.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static KiloStage Custom(string name) => new(TinyEcs.Bevy.Stage.Custom(name));
+    public static KiloStage Custom(string name) => new(name);
+
+    // ── Equality ────────────────────────────────────────────
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public bool Equals(KiloStage other) => Name == other.Name;
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public override bool Equals(object? obj) => obj is KiloStage s && Equals(s);
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public override int GetHashCode() => Name.GetHashCode();
+
+    public static bool operator ==(KiloStage a, KiloStage b) => a.Name == b.Name;
+    public static bool operator !=(KiloStage a, KiloStage b) => a.Name != b.Name;
 
     public override string ToString() => Name;
 }
